@@ -1,0 +1,166 @@
+import json
+import time
+from typing import Any
+
+from sqlalchemy import select
+
+from src.db.models import CrawlJob, CrawlResultItem, DiscoveredUrl, LogLine
+from src.db.pg import async_session
+from src.worker.settings_builder import build_filter_chain, build_settings
+
+from onecrawler import Crawler, LinkExtractor, UniversalSiteMap
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _summarize_content(content: Any, fallback_url: str) -> tuple[str, str, int, str, str]:
+    """Returns (url, title, word_count, preview, raw) for a scraped content item."""
+    if isinstance(content, dict):
+        url = content.get("url") or fallback_url
+        title = content.get("title") or url
+        text = content.get("text") or content.get("raw_text") or ""
+        if not text:
+            text = json.dumps(content, ensure_ascii=False, default=str)
+        raw = json.dumps(content, ensure_ascii=False, default=str)
+    else:
+        url = fallback_url
+        title = url
+        text = str(content)
+        raw = text
+
+    word_count = len(text.split()) if text else 0
+    preview = text[:400]
+    return url, title, word_count, preview, raw
+
+
+async def _log(db, job_id: str, level: str, message: str) -> None:
+    db.add(LogLine(job_id=job_id, timestamp=_now_ms(), level=level, message=message))
+    await db.commit()
+
+
+async def _is_cancelled(db, job_id: str) -> bool:
+    status = await db.scalar(select(CrawlJob.status).where(CrawlJob.id == job_id))
+    return status == "cancelled"
+
+
+async def run_crawl_job(ctx, job_id: str) -> None:
+    async with async_session() as db:
+        job = await db.get(CrawlJob, job_id)
+        if job is None or job.status == "cancelled":
+            return
+
+        job.status = "running"
+        job.started_at = _now_ms()
+        await db.commit()
+        await _log(db, job_id, "info", f"Starting {job.mode} job for {job.target_url}")
+
+        try:
+            settings = await build_settings(db, job.settings)
+        except Exception as exc:
+            job.status = "failed"
+            job.error = f"Invalid settings: {exc}"
+            job.finished_at = _now_ms()
+            await db.commit()
+            await _log(db, job_id, "error", job.error)
+            return
+
+        try:
+            if job.mode == "sitemap":
+                cancelled = await _run_sitemap(db, job, settings)
+            elif job.mode == "link_extraction":
+                cancelled = await _run_link_extraction(db, job, settings)
+            elif job.mode == "crawler":
+                filters = build_filter_chain(job.filters)
+                cancelled = await _run_crawler(db, job, settings, filters)
+            else:
+                raise ValueError(f"Unknown crawl mode: {job.mode}")
+
+            job.status = "cancelled" if cancelled else "completed"
+            job.finished_at = _now_ms()
+            await db.commit()
+            await _log(db, job_id, "info", f"Job {job.status}")
+
+        except Exception as exc:
+            job.status = "failed"
+            job.error = str(exc)
+            job.finished_at = _now_ms()
+            await db.commit()
+            await _log(db, job_id, "error", f"Job failed: {exc}")
+
+
+async def _run_sitemap(db, job: CrawlJob, settings) -> bool:
+    engine = UniversalSiteMap(settings)
+    urls = await engine.run(job.target_url)
+
+    for url in urls:
+        if await _is_cancelled(db, job.id):
+            await _log(db, job.id, "warn", "Cancelled before completion")
+            return True
+
+        db.add(DiscoveredUrl(job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"))
+        job.urls_discovered += 1
+        await db.commit()
+
+    return False
+
+
+async def _run_link_extraction(db, job: CrawlJob, settings) -> bool:
+    async with LinkExtractor(settings) as engine:
+        if settings.link_extraction_strategy == "shallow":
+            urls = await engine.run(job.target_url)
+            for url in urls:
+                if await _is_cancelled(db, job.id):
+                    await _log(db, job.id, "warn", "Cancelled before completion")
+                    return True
+                db.add(
+                    DiscoveredUrl(
+                        job_id=job.id,
+                        url=url,
+                        discovered_at=_now_ms(),
+                        status="extracted",
+                    )
+                )
+                job.urls_discovered += 1
+            await db.commit()
+            return False
+
+        async for url in engine.stream(job.target_url):
+            if await _is_cancelled(db, job.id):
+                await _log(db, job.id, "warn", "Cancelled before completion")
+                return True
+            db.add(DiscoveredUrl(job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"))
+            job.urls_discovered += 1
+            await db.commit()
+
+    return False
+
+
+async def _run_crawler(db, job: CrawlJob, settings, filters) -> bool:
+    async with Crawler(settings) as engine:
+        async for content in engine.stream(job.target_url, filters=filters):
+            if await _is_cancelled(db, job.id):
+                await _log(db, job.id, "warn", "Cancelled before completion")
+                return True
+
+            url, title, word_count, preview, raw = _summarize_content(content, job.target_url)
+
+            db.add(DiscoveredUrl(job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"))
+            db.add(
+                CrawlResultItem(
+                    job_id=job.id,
+                    url=url,
+                    title=title,
+                    word_count=word_count,
+                    format=settings.scraping_output_format,
+                    extracted_at=_now_ms(),
+                    preview=preview,
+                    content=raw,
+                )
+            )
+            job.urls_discovered += 1
+            job.urls_scraped += 1
+            await db.commit()
+
+    return False
