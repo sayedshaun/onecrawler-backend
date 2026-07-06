@@ -1,0 +1,58 @@
+# CLAUDE.md
+
+## Overview
+
+Follow the existing architecture and coding style. Make the smallest change necessary to solve the problem. Prioritize readability, maintainability, and correctness over cleverness.
+
+## Python
+
+- Target Python 3.12+
+- Use type hints for all new code.
+- Follow PEP 8.
+- Prefer f-strings, `pathlib`, context managers, and dataclasses/Pydantic where appropriate.
+- Keep functions focused and reasonably short.
+
+## Code Style
+
+- Prefer simple, explicit code.
+- Avoid duplication.
+- Use meaningful names.
+- Prefer early returns over nested conditionals.
+- Do not introduce unnecessary abstractions.
+
+## Project Structure
+
+- Keep business logic out of API/routes.
+- Reuse existing modules before creating new ones.
+- Respect the current project architecture.
+
+## Error Handling
+
+- Raise meaningful exceptions.
+- Never silently ignore errors.
+- Catch only expected exceptions.
+
+## Logging
+
+- Use `logging` instead of `print()`.
+
+## Testing
+
+When changing behavior:
+
+- Update or add tests if needed.
+- Do not remove existing tests without reason.
+
+## Dependencies
+
+- Prefer the standard library when possible.
+- Avoid adding new dependencies unless necessary.
+
+## Before Finishing
+
+Ensure:
+
+- Code is formatted.
+- Type hints are correct.
+- No dead or commented-out code remains.
+- Only relevant files were modified.
