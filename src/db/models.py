@@ -14,7 +14,9 @@ def _uuid() -> str:
 class Users(Base):
     __tablename__ = "users"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
     name: Mapped[str] = mapped_column(String, nullable=False, default="")
     email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
@@ -25,7 +27,9 @@ class Users(Base):
 class CrawlJob(Base):
     __tablename__ = "crawl_jobs"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
     target_url: Mapped[str] = mapped_column(String, nullable=False)
     mode: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
@@ -62,7 +66,9 @@ class CrawlJob(Base):
 class DiscoveredUrl(Base):
     __tablename__ = "discovered_urls"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
     job_id: Mapped[str] = mapped_column(ForeignKey("crawl_jobs.id", ondelete="CASCADE"))
     url: Mapped[str] = mapped_column(String, nullable=False)
     discovered_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -74,7 +80,9 @@ class DiscoveredUrl(Base):
 class CrawlResultItem(Base):
     __tablename__ = "crawl_result_items"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
     job_id: Mapped[str] = mapped_column(ForeignKey("crawl_jobs.id", ondelete="CASCADE"))
     url: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, nullable=False, default="")
@@ -89,7 +97,9 @@ class CrawlResultItem(Base):
 class LogLine(Base):
     __tablename__ = "log_lines"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
     job_id: Mapped[str] = mapped_column(ForeignKey("crawl_jobs.id", ondelete="CASCADE"))
     timestamp: Mapped[int] = mapped_column(BigInteger, nullable=False)
     level: Mapped[str] = mapped_column(String, nullable=False, default="info")
@@ -101,7 +111,9 @@ class LogLine(Base):
 class CrawlSettingsTemplate(Base):
     __tablename__ = "crawl_settings_templates"
 
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=_uuid
+    )
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     settings: Mapped[dict] = mapped_column(JSONB, nullable=False)
     filters: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

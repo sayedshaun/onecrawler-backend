@@ -17,7 +17,9 @@ async def list_data(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    rows, total = await crud.list_results(db, job_id=job_id, format=format, search=q, limit=limit, offset=offset)
+    rows, total = await crud.list_results(
+        db, job_id=job_id, format=format, search=q, limit=limit, offset=offset
+    )
 
     items = [
         DataItemOut(

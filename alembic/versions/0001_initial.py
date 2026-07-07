@@ -41,7 +41,10 @@ def upgrade() -> None:
         "discovered_urls",
         sa.Column("id", postgresql.UUID(as_uuid=False), primary_key=True),
         sa.Column(
-            "job_id", postgresql.UUID(as_uuid=False), sa.ForeignKey("crawl_jobs.id", ondelete="CASCADE"), nullable=False
+            "job_id",
+            postgresql.UUID(as_uuid=False),
+            sa.ForeignKey("crawl_jobs.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column("url", sa.String(), nullable=False),
         sa.Column("discovered_at", sa.BigInteger(), nullable=False),
@@ -53,7 +56,10 @@ def upgrade() -> None:
         "crawl_result_items",
         sa.Column("id", postgresql.UUID(as_uuid=False), primary_key=True),
         sa.Column(
-            "job_id", postgresql.UUID(as_uuid=False), sa.ForeignKey("crawl_jobs.id", ondelete="CASCADE"), nullable=False
+            "job_id",
+            postgresql.UUID(as_uuid=False),
+            sa.ForeignKey("crawl_jobs.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column("url", sa.String(), nullable=False),
         sa.Column("title", sa.String(), nullable=False, server_default=""),
@@ -69,7 +75,10 @@ def upgrade() -> None:
         "log_lines",
         sa.Column("id", postgresql.UUID(as_uuid=False), primary_key=True),
         sa.Column(
-            "job_id", postgresql.UUID(as_uuid=False), sa.ForeignKey("crawl_jobs.id", ondelete="CASCADE"), nullable=False
+            "job_id",
+            postgresql.UUID(as_uuid=False),
+            sa.ForeignKey("crawl_jobs.id", ondelete="CASCADE"),
+            nullable=False,
         ),
         sa.Column("timestamp", sa.BigInteger(), nullable=False),
         sa.Column("level", sa.String(), nullable=False, server_default="info"),

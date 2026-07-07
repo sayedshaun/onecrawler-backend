@@ -43,7 +43,9 @@ def upgrade() -> None:
         type_=postgresql.JSONB(),
         postgresql_using=f"{_TO_JSONB_FN}(content)",
     )
-    op.execute("ALTER TABLE crawl_result_items ALTER COLUMN content SET DEFAULT '{}'::jsonb")
+    op.execute(
+        "ALTER TABLE crawl_result_items ALTER COLUMN content SET DEFAULT '{}'::jsonb"
+    )
 
     op.execute(f"DROP FUNCTION {_TO_JSONB_FN}(text)")
 

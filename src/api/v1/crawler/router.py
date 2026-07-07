@@ -43,7 +43,9 @@ async def list_crawls(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
-    items = await crud.list_jobs(db, limit=limit, offset=offset, status=status, search=q)
+    items = await crud.list_jobs(
+        db, limit=limit, offset=offset, status=status, search=q
+    )
     total = await crud.count_jobs(db, status=status, search=q)
     return CrawlListOut(items=items, total=total, limit=limit, offset=offset)
 
@@ -52,7 +54,9 @@ async def list_crawls(
 async def get_crawl(job_id: str, db: AsyncSession = Depends(get_db)):
     job = await crud.get_job(db, job_id)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found"
+        )
 
     return CrawlJobDetailOut.model_validate(
         {
@@ -72,7 +76,9 @@ async def get_crawl_logs(
 ):
     job = await crud.get_job(db, job_id)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found"
+        )
 
     items = await crud.list_logs(db, job_id, limit=limit, offset=offset)
     total = await crud.count_logs(db, job_id)
@@ -88,7 +94,9 @@ async def list_discovered_urls(
 ):
     job = await crud.get_job(db, job_id)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found"
+        )
 
     items = await crud.list_discovered(db, job_id, limit=limit, offset=offset)
     total = await crud.count_discovered(db, job_id)
@@ -99,7 +107,9 @@ async def list_discovered_urls(
 async def cancel_crawl(job_id: str, db: AsyncSession = Depends(get_db)):
     job = await crud.get_job(db, job_id)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found"
+        )
 
     return await crud.cancel_job(db, job)
 
@@ -108,8 +118,13 @@ async def cancel_crawl(job_id: str, db: AsyncSession = Depends(get_db)):
 async def delete_crawl(job_id: str, db: AsyncSession = Depends(get_db)):
     job = await crud.get_job(db, job_id)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found"
+        )
     if job.status in _ACTIVE_STATUSES:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cancel the crawl before deleting it")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cancel the crawl before deleting it",
+        )
 
     await crud.delete_job(db, job)

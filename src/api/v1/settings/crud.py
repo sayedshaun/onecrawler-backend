@@ -18,7 +18,9 @@ def now_ms() -> int:
 # ---- crawl settings templates ----
 
 
-async def create_template(db: AsyncSession, name: str, settings: dict, filters: dict | None) -> CrawlSettingsTemplate:
+async def create_template(
+    db: AsyncSession, name: str, settings: dict, filters: dict | None
+) -> CrawlSettingsTemplate:
     template = CrawlSettingsTemplate(
         id=str(uuid.uuid4()),
         name=name,
@@ -34,11 +36,15 @@ async def create_template(db: AsyncSession, name: str, settings: dict, filters: 
 
 
 async def list_templates(db: AsyncSession) -> list[CrawlSettingsTemplate]:
-    result = await db.execute(select(CrawlSettingsTemplate).order_by(CrawlSettingsTemplate.name))
+    result = await db.execute(
+        select(CrawlSettingsTemplate).order_by(CrawlSettingsTemplate.name)
+    )
     return list(result.scalars().all())
 
 
-async def get_template(db: AsyncSession, template_id: str) -> CrawlSettingsTemplate | None:
+async def get_template(
+    db: AsyncSession, template_id: str
+) -> CrawlSettingsTemplate | None:
     return await db.get(CrawlSettingsTemplate, template_id)
 
 
@@ -76,7 +82,9 @@ async def get_api_key_value(db: AsyncSession, provider: str) -> str | None:
     return key.api_key if key else None
 
 
-async def upsert_api_key(db: AsyncSession, provider: str, api_key: str) -> ProviderApiKey:
+async def upsert_api_key(
+    db: AsyncSession, provider: str, api_key: str
+) -> ProviderApiKey:
     key = await db.get(ProviderApiKey, provider)
     if key is None:
         key = ProviderApiKey(provider=provider, api_key=api_key, updated_at=now_ms())

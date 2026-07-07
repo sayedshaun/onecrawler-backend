@@ -10,7 +10,9 @@ ScrapingOutputFormat = Literal["markdown", "json", "xml", "xmltei"]
 ProxyRotationMethod = Literal["round_robin", "random"]
 GenAIProvider = Literal["openai", "google", "ollama"]
 CrawlMode = Literal["sitemap", "link_extraction", "crawler"]
-FilterKind = Literal["by_date", "by_keywords", "by_files", "by_extension", "by_cosine_similarity"]
+FilterKind = Literal[
+    "by_date", "by_keywords", "by_files", "by_extension", "by_cosine_similarity"
+]
 FilterGroupMode = Literal["AND", "OR"]
 CrawlStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
@@ -22,10 +24,12 @@ class InSchema(BaseModel):
 
 
 class OutSchema(BaseModel):
-    """Base for response payloads: serializes Python snake_case fields as camelCase so the UI's existing `types.ts`
-    interfaces can consume responses as-is."""
+    """Base for response payloads: serializes Python snake_case fields as camelCase so
+    the UI's existing `types.ts` interfaces can consume responses as-is."""
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True)
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, from_attributes=True
+    )
 
 
 class ProxySettingsIn(InSchema):

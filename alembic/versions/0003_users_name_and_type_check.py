@@ -18,7 +18,9 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("users", sa.Column("name", sa.String(), nullable=False, server_default=""))
+    op.add_column(
+        "users", sa.Column("name", sa.String(), nullable=False, server_default="")
+    )
     op.create_check_constraint(
         "ck_users_user_type",
         "users",

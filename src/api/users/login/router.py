@@ -12,14 +12,22 @@ router = APIRouter()
 
 @router.post("/login", response_model=TokenOut)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
-    invalid = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    invalid = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+    )
 
     user = await crud.get_user_by_email(db, payload.email)
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise invalid
 
     if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled"
+        )
 
-    token = create_access_token(user_id=user.id, email=user.email, user_type=user.user_type, name=user.name)
-    return TokenOut(access_token=token, expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+    token = create_access_token(
+        user_id=user.id, email=user.email, user_type=user.user_type, name=user.name
+    )
+    return TokenOut(
+        access_token=token, expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    )

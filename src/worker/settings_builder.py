@@ -1,5 +1,5 @@
-"""Maps the JSON payload stored on a CrawlJob (mirroring the UI's ui/src/lib/api-mapper.ts snake_case shape) onto real
-onecrawler.Settings / FilterChain objects."""
+"""Maps the JSON payload stored on a CrawlJob (mirroring the UI's ui/src/lib/api-
+mapper.ts snake_case shape) onto real onecrawler.Settings / FilterChain objects."""
 
 import re
 from collections.abc import Callable
@@ -49,18 +49,24 @@ def _parse_field_type(type_str: str) -> tuple[Any, Any]:
 def build_output_schema(fields: dict[str, str]) -> type[BaseModel] | None:
     if not fields:
         return None
-    field_defs = {name: _parse_field_type(type_str) for name, type_str in fields.items()}
+    field_defs = {
+        name: _parse_field_type(type_str) for name, type_str in fields.items()
+    }
     return create_model("GenAIOutputSchema", **field_defs)
 
 
 async def build_settings(db: AsyncSession, payload: dict) -> Settings:
     s = CrawlSettingsIn(**payload)
 
-    proxies = [ProxySettings(**p.model_dump()) for p in s.proxies] if s.proxies else None
+    proxies = (
+        [ProxySettings(**p.model_dump()) for p in s.proxies] if s.proxies else None
+    )
 
     genai = None
     if s.genai:
-        api_key = s.genai.api_key or await settings_crud.get_api_key_value(db, s.genai.provider)
+        api_key = s.genai.api_key or await settings_crud.get_api_key_value(
+            db, s.genai.provider
+        )
         genai = GenerativeAISettings(
             provider=s.genai.provider,
             model_name=s.genai.model_name,
@@ -138,7 +144,9 @@ def build_filter_chain(filters: dict | None) -> Callable[[dict], bool] | None:
         elif node.kind == "by_extension":
             predicates.append(by_extension(node.extensions or []))
         elif node.kind == "by_cosine_similarity":
-            predicates.append(by_cosine_similarity(node.query or "", node.threshold or 0.25))
+            predicates.append(
+                by_cosine_similarity(node.query or "", node.threshold or 0.25)
+            )
 
     if not predicates:
         return None

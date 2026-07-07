@@ -27,7 +27,9 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> CurrentUser:
-    unauthorized = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+    unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+    )
 
     try:
         payload = decode_access_token(credentials.credentials)
@@ -44,5 +46,10 @@ async def get_current_user(
         raise unauthorized
 
     return CurrentUser(
-        id=user.id, email=user.email, user_type=user.user_type, name=user.name, jti=jti, exp=payload["exp"]
+        id=user.id,
+        email=user.email,
+        user_type=user.user_type,
+        name=user.name,
+        jti=jti,
+        exp=payload["exp"],
     )

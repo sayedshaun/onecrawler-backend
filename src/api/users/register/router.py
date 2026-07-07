@@ -13,9 +13,14 @@ router = APIRouter()
 async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing = await crud.get_user_by_email(db, payload.email)
     if existing is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+        )
 
     user = await crud.create_user(
-        db, email=payload.email, hashed_password=hash_password(payload.password), name=payload.name
+        db,
+        email=payload.email,
+        hashed_password=hash_password(payload.password),
+        name=payload.name,
     )
     return user

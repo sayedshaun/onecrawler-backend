@@ -14,7 +14,9 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _summarize_content(content: Any, fallback_url: str) -> tuple[str, str, int, str, dict]:
+def _summarize_content(
+    content: Any, fallback_url: str
+) -> tuple[str, str, int, str, dict]:
     """Returns (url, title, word_count, preview, payload) for a scraped content item.
 
     `payload` is always a dict so heuristic and genai extractions (which produce
@@ -102,7 +104,11 @@ async def _run_sitemap(db, job: CrawlJob, settings) -> bool:
             await _log(db, job.id, "warn", "Cancelled before completion")
             return True
 
-        db.add(DiscoveredUrl(job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"))
+        db.add(
+            DiscoveredUrl(
+                job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"
+            )
+        )
         job.urls_discovered += 1
         await db.commit()
 
@@ -133,7 +139,11 @@ async def _run_link_extraction(db, job: CrawlJob, settings) -> bool:
             if await _is_cancelled(db, job.id):
                 await _log(db, job.id, "warn", "Cancelled before completion")
                 return True
-            db.add(DiscoveredUrl(job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"))
+            db.add(
+                DiscoveredUrl(
+                    job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"
+                )
+            )
             job.urls_discovered += 1
             await db.commit()
 
@@ -147,9 +157,15 @@ async def _run_crawler(db, job: CrawlJob, settings, filters) -> bool:
                 await _log(db, job.id, "warn", "Cancelled before completion")
                 return True
 
-            url, title, word_count, preview, payload = _summarize_content(content, job.target_url)
+            url, title, word_count, preview, payload = _summarize_content(
+                content, job.target_url
+            )
 
-            db.add(DiscoveredUrl(job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"))
+            db.add(
+                DiscoveredUrl(
+                    job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"
+                )
+            )
             db.add(
                 CrawlResultItem(
                     job_id=job.id,

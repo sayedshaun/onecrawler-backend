@@ -22,7 +22,9 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str, user_type: str, name: str = "") -> str:
+def create_access_token(
+    user_id: str, email: str, user_type: str, name: str = ""
+) -> str:
     now = datetime.now(UTC)
     payload = {
         "sub": user_id,
@@ -33,8 +35,12 @@ def create_access_token(user_id: str, email: str, user_type: str, name: str = ""
         "iat": now,
         "exp": now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     }
-    return jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+    return jwt.encode(
+        payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+    )
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
-    return jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    return jwt.decode(
+        token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
+    )

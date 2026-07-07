@@ -20,8 +20,12 @@ def _require_provider(provider: str) -> None:
         raise HTTPException(status_code=404, detail=f"Unknown provider: {provider}")
 
 
-@router.post("/templates", response_model=CrawlTemplateOut, status_code=status.HTTP_201_CREATED)
-async def create_crawl_template(payload: CrawlTemplateIn, db: AsyncSession = Depends(get_db)):
+@router.post(
+    "/templates", response_model=CrawlTemplateOut, status_code=status.HTTP_201_CREATED
+)
+async def create_crawl_template(
+    payload: CrawlTemplateIn, db: AsyncSession = Depends(get_db)
+):
     try:
         template = await crud.create_template(
             db,
@@ -31,7 +35,9 @@ async def create_crawl_template(payload: CrawlTemplateIn, db: AsyncSession = Dep
         )
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail=f"Template '{payload.name}' already exists")
+        raise HTTPException(
+            status_code=409, detail=f"Template '{payload.name}' already exists"
+        )
 
     return template
 
@@ -51,7 +57,9 @@ async def get_crawl_template(template_id: str, db: AsyncSession = Depends(get_db
 
 
 @router.put("/templates/{template_id}", response_model=CrawlTemplateOut)
-async def update_crawl_template(template_id: str, payload: CrawlTemplateIn, db: AsyncSession = Depends(get_db)):
+async def update_crawl_template(
+    template_id: str, payload: CrawlTemplateIn, db: AsyncSession = Depends(get_db)
+):
     template = await crud.get_template(db, template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="Template not found")
@@ -66,7 +74,9 @@ async def update_crawl_template(template_id: str, payload: CrawlTemplateIn, db: 
         )
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail=f"Template '{payload.name}' already exists")
+        raise HTTPException(
+            status_code=409, detail=f"Template '{payload.name}' already exists"
+        )
 
     return template
 
@@ -96,7 +106,9 @@ async def list_provider_api_keys(db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/api-keys/{provider}", response_model=ApiKeyOut)
-async def set_provider_api_key(provider: str, payload: ApiKeyIn, db: AsyncSession = Depends(get_db)):
+async def set_provider_api_key(
+    provider: str, payload: ApiKeyIn, db: AsyncSession = Depends(get_db)
+):
     _require_provider(provider)
     key = await crud.upsert_api_key(db, provider, payload.api_key)
     return ApiKeyOut(provider=provider, has_key=True, updated_at=key.updated_at)
