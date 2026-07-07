@@ -14,24 +14,28 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _summarize_content(content: Any, fallback_url: str) -> tuple[str, str, int, str, str]:
-    """Returns (url, title, word_count, preview, raw) for a scraped content item."""
+def _summarize_content(content: Any, fallback_url: str) -> tuple[str, str, int, str, dict]:
+    """Returns (url, title, word_count, preview, payload) for a scraped content item.
+
+    `payload` is always a dict so heuristic and genai extractions (which produce
+    different shapes) can share the same JSONB column.
+    """
     if isinstance(content, dict):
         url = content.get("url") or fallback_url
         title = content.get("title") or url
         text = content.get("text") or content.get("raw_text") or ""
         if not text:
             text = json.dumps(content, ensure_ascii=False, default=str)
-        raw = json.dumps(content, ensure_ascii=False, default=str)
+        payload = content
     else:
         url = fallback_url
         title = url
         text = str(content)
-        raw = text
+        payload = {"text": text}
 
     word_count = len(text.split()) if text else 0
     preview = text[:400]
-    return url, title, word_count, preview, raw
+    return url, title, word_count, preview, payload
 
 
 async def _log(db, job_id: str, level: str, message: str) -> None:
@@ -143,7 +147,7 @@ async def _run_crawler(db, job: CrawlJob, settings, filters) -> bool:
                 await _log(db, job.id, "warn", "Cancelled before completion")
                 return True
 
-            url, title, word_count, preview, raw = _summarize_content(content, job.target_url)
+            url, title, word_count, preview, payload = _summarize_content(content, job.target_url)
 
             db.add(DiscoveredUrl(job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"))
             db.add(
@@ -155,7 +159,7 @@ async def _run_crawler(db, job: CrawlJob, settings, filters) -> bool:
                     format=settings.scraping_output_format,
                     extracted_at=_now_ms(),
                     preview=preview,
-                    content=raw,
+                    content=payload,
                 )
             )
             job.urls_discovered += 1

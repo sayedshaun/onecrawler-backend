@@ -82,8 +82,7 @@ class CrawlResultItem(Base):
     format: Mapped[str] = mapped_column(String, nullable=False)
     extracted_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
     preview: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
-
+    content: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     job: Mapped["CrawlJob"] = relationship(back_populates="results")
 
 

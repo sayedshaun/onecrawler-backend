@@ -33,4 +33,4 @@ class DataListOut(OutSchema):
 
 
 class DataItemDetailOut(DataItemOut):
-    content: str
+    content: dict
