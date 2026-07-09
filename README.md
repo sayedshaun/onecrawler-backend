@@ -9,6 +9,7 @@ FastAPI backend for OneCrawler — a web crawling and content-extraction platfor
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Configuration](#configuration)
+- [Logging](#logging)
 - [Database Migrations](#database-migrations)
 - [Authentication](#authentication)
 - [API Reference](#api-reference)
@@ -20,22 +21,15 @@ FastAPI backend for OneCrawler — a web crawling and content-extraction platfor
 
 ## Architecture
 
-```
-                     ┌──────────────┐
-   HTTP clients ───▶ │   fastapi    │  REST API (auth, CRUD, job creation)
-                     └──────┬───────┘
-                            │ enqueues jobs
-                            ▼
-                     ┌──────────────┐        ┌──────────┐
-                     │    redis     │◀──────▶│   arq    │  worker: runs crawls,
-                     └──────────────┘        └────┬─────┘  writes results
-                            ▲                     │
-                            │                     ▼
-                     ┌──────────────┐      ┌──────────────┐
-                     │  fastapi     │─────▶│  postgres    │
-                     │ (reads state)│      │ (jobs, users,│
-                     └──────────────┘      │  results...) │
-                                            └──────────────┘
+```mermaid
+flowchart LR
+    client[HTTP clients] --> fastapi["fastapi<br/>REST API: auth, CRUD, job creation"]
+    fastapi -->|enqueues job| redis[("redis<br/>job queue")]
+    fastapi <-->|reads/writes| postgres[("postgres<br/>jobs, users, results...")]
+    redis -->|dequeues| arq["arq<br/>worker: runs crawls"]
+    arq -->|writes results| postgres
+
+    classDef default stroke:#666,stroke-width:1.5px
 ```
 
 The API and worker are split into separate containers built from the same [Dockerfile](Dockerfile) with different targets:
@@ -119,6 +113,8 @@ The `arq` worker doesn't hot-reload (job processes shouldn't restart mid-run) �
 docker compose restart arq
 ```
 
+This dev overlay also starts an `ngrok` container that tunnels `fastapi` to a public URL — useful for testing webhooks or sharing a local build. Set `NGROK_AUTHTOKEN` in `.env` (get one from [dashboard.ngrok.com](https://dashboard.ngrok.com/get-started/your-authtoken)), then check the assigned URL at `http://localhost:4040`.
+
 ### Running without Docker
 
 ```bash
@@ -147,13 +143,24 @@ All configuration is via environment variables (`.env`, loaded by `src/core/conf
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime | `60` |
 | `DEFAULT_ADMIN_NAME` / `_EMAIL` / `_PASSWORD` | Seeded admin account (only created if no user with that email exists) | see `.env.example` |
 | `CORS_ORIGINS` | JSON array of allowed origins | `["http://localhost:5173"]` |
+| `LOG_LEVEL` | Root logging level (`DEBUG`/`INFO`/`WARNING`/`ERROR`) for the API and worker | `INFO` |
 | `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT` / `API_HOST_PORT` | Host-side port overrides for docker-compose | commented out |
+| `NGROK_AUTHTOKEN` | Dev-only: public tunnel token for `docker-compose.dev.yml`'s `ngrok` service | unset |
 
 Generate a real `JWT_SECRET_KEY` with:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
+
+## Logging
+
+`src/core/logger.py` configures the root logger (via `get_logger()`, called on startup by both `main.py` and `src/worker/settings.py`) with two handlers:
+
+- A rotating file handler at `logs/app.log`, capped at 20MB with 3 backups.
+- A console handler (visible via `docker compose logs`).
+
+The level is controlled by `LOG_LEVEL`. Note `logs/` isn't a mounted volume, so file logs are lost if a container is recreated (not just restarted) — use `docker compose logs` for anything you need to survive that.
 
 ## Database Migrations
 
