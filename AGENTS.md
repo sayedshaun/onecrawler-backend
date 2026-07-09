@@ -8,7 +8,7 @@ Follow the existing architecture and coding style. Make the smallest change nece
 
 - Target Python 3.12+
 - Use type hints for all new code.
-- Follow PEP 8.
+- Follow PEP 8; format and lint with `ruff` (line length 88, see `pyproject.toml`).
 - Prefer f-strings, `pathlib`, context managers, and dataclasses/Pydantic where appropriate.
 - Keep functions focused and reasonably short.
 
@@ -22,7 +22,8 @@ Follow the existing architecture and coding style. Make the smallest change nece
 
 ## Project Structure
 
-- Keep business logic out of API/routes.
+- Each feature lives under `src/api/.../<feature>/` with `router.py` (routes only), `schema.py` (Pydantic models), and `crud.py` (DB access/business logic).
+- Keep business logic out of `router.py`; put it in `crud.py`.
 - Reuse existing modules before creating new ones.
 - Respect the current project architecture.
 
