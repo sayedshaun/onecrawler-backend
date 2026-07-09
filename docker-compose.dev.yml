@@ -4,21 +4,18 @@ services:
   fastapi:
     volumes:
       - .:/app
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: [ "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload" ]
 
   arq:
     volumes:
       - .:/app
 
-  # Exposes the fastapi service on a public ngrok URL. Requires
-  # NGROK_AUTHTOKEN in .env (get one from https://dashboard.ngrok.com).
-  # Inspect the assigned URL via the local dashboard at http://localhost:4040.
   ngrok:
     image: ngrok/ngrok:latest
     container_name: onecrawler-ngrok
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
-    command: ["http", "fastapi:8000"]
+    command: [ "http", "fastapi:8000" ]
     ports:
       - "4040:4040"
     depends_on:
