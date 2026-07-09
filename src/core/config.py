@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    LOG_LEVEL: str = "INFO"
+
     JWT_SECRET_KEY: str = "dev-secret-change-me"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60

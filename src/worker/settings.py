@@ -1,7 +1,10 @@
 from arq.connections import RedisSettings
 
 from src.core.config import settings as app_settings
+from src.core.logger import get_logger
 from src.worker.tasks import run_crawl_job
+
+get_logger()
 
 
 async def shutdown(ctx) -> None:

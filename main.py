@@ -8,8 +8,11 @@ from src.api.users import crud as users_crud
 from src.api.users.router import router as users_router
 from src.api.v1.router import api_router
 from src.core.config import settings
+from src.core.logger import get_logger
 from src.core.pool import close_arq_pool, get_arq_pool
 from src.db.pg import async_session
+
+get_logger()
 
 
 @asynccontextmanager
