@@ -2,7 +2,7 @@ import json
 import time
 from typing import Any
 
-from onecrawler import Crawler, LinkExtractor, UniversalSiteMap
+from onecrawler import Crawler, LinkExtractor, Scraper, UniversalSiteMap
 from sqlalchemy import select
 
 from src.db.models import CrawlJob, CrawlResultItem, DiscoveredUrl, LogLine
@@ -79,6 +79,8 @@ async def run_crawl_job(ctx, job_id: str) -> None:
             elif job.mode == "crawler":
                 filters = build_filter_chain(job.filters)
                 cancelled = await _run_crawler(db, job, settings, filters)
+            elif job.mode == "scraper":
+                cancelled = await _run_scraper(db, job, settings)
             else:
                 raise ValueError(f"Unknown crawl mode: {job.mode}")
 
@@ -159,6 +161,42 @@ async def _run_crawler(db, job: CrawlJob, settings, filters) -> bool:
 
             url, title, word_count, preview, payload = _summarize_content(
                 content, job.target_url
+            )
+
+            db.add(
+                DiscoveredUrl(
+                    job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"
+                )
+            )
+            db.add(
+                CrawlResultItem(
+                    job_id=job.id,
+                    url=url,
+                    title=title,
+                    word_count=word_count,
+                    format=settings.scraping_output_format,
+                    extracted_at=_now_ms(),
+                    preview=preview,
+                    content=payload,
+                )
+            )
+            job.urls_discovered += 1
+            job.urls_scraped += 1
+            await db.commit()
+
+    return False
+
+
+async def _run_scraper(db, job: CrawlJob, settings) -> bool:
+    urls = job.seed_urls or []
+    async with Scraper(settings) as engine:
+        async for item in engine.stream(urls):
+            if await _is_cancelled(db, job.id):
+                await _log(db, job.id, "warn", "Cancelled before completion")
+                return True
+
+            url, title, word_count, preview, payload = _summarize_content(
+                item.get("result"), item.get("url", job.target_url)
             )
 
             db.add(

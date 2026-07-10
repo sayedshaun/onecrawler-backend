@@ -9,6 +9,7 @@ from src.api.v1.crawler.schema import (
     CreateCrawlRequest,
     DiscoveredListOut,
     LogListOut,
+    ScrapeFromDiscoveredRequest,
 )
 from src.core.pool import get_arq_pool
 from src.db.pg import get_db
@@ -101,6 +102,50 @@ async def list_discovered_urls(
     items = await crud.list_discovered(db, job_id, limit=limit, offset=offset)
     total = await crud.count_discovered(db, job_id)
     return DiscoveredListOut(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.delete(
+    "/{job_id}/discovered/{discovered_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_discovered_url(
+    job_id: str, discovered_id: str, db: AsyncSession = Depends(get_db)
+):
+    deleted = await crud.delete_discovered(db, job_id, discovered_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Discovered URL not found"
+        )
+
+
+@router.post(
+    "/{job_id}/scrape",
+    response_model=CrawlJobSummaryOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def scrape_discovered_urls(
+    job_id: str,
+    payload: ScrapeFromDiscoveredRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    source_job = await crud.get_job(db, job_id)
+    if source_job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found"
+        )
+
+    job = await crud.create_scrape_job(
+        db, source_job, settings=payload.settings.model_dump()
+    )
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No discovered URLs available to scrape",
+        )
+
+    pool = await get_arq_pool()
+    await pool.enqueue_job("run_crawl_job", job.id, _job_id=job.id)
+
+    return job
 
 
 @router.post("/{job_id}/cancel", response_model=CrawlJobSummaryOut)

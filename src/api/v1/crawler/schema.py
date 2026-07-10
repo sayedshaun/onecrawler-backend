@@ -9,7 +9,7 @@ ScrapingStrategy = Literal["heuristic", "genai"]
 ScrapingOutputFormat = Literal["markdown", "json", "xml", "xmltei"]
 ProxyRotationMethod = Literal["round_robin", "random"]
 GenAIProvider = Literal["openai", "google", "ollama"]
-CrawlMode = Literal["sitemap", "link_extraction", "crawler"]
+CrawlMode = Literal["sitemap", "link_extraction", "crawler", "scraper"]
 FilterKind = Literal[
     "by_date", "by_keywords", "by_files", "by_extension", "by_cosine_similarity"
 ]
@@ -155,6 +155,10 @@ class CreateCrawlRequest(InSchema):
     mode: CrawlMode
     settings: CrawlSettingsIn
     filters: FilterGroupIn | None = None
+
+
+class ScrapeFromDiscoveredRequest(InSchema):
+    settings: CrawlSettingsIn
 
 
 class CrawlJobSummaryOut(OutSchema):
