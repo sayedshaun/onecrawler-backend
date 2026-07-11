@@ -1,6 +1,7 @@
 import json
 import time
 from typing import Any
+from urllib.parse import unquote
 
 from onecrawler import Crawler, LinkExtractor, Scraper, UniversalSiteMap
 from sqlalchemy import select
@@ -21,6 +22,11 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _decode_url(url: str) -> str:
+    """Decode a percent-encoded URL so it's human-readable in the UI."""
+    return unquote(url, errors="replace")
+
+
 def _summarize_content(
     content: Any, fallback_url: str
 ) -> tuple[str, str, int, str, dict]:
@@ -30,14 +36,14 @@ def _summarize_content(
     different shapes) can share the same JSONB column.
     """
     if isinstance(content, dict):
-        url = content.get("url") or fallback_url
+        url = _decode_url(content.get("url") or fallback_url)
         title = content.get("title") or url
         text = content.get("text") or content.get("raw_text") or ""
         if not text:
             text = json.dumps(content, ensure_ascii=False, default=str)
         payload = content
     else:
-        url = fallback_url
+        url = _decode_url(fallback_url)
         title = url
         text = str(content)
         payload = {"text": text}
@@ -115,7 +121,10 @@ async def _run_sitemap(db, job: CrawlJob, settings) -> bool:
 
         db.add(
             DiscoveredUrl(
-                job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"
+                job_id=job.id,
+                url=_decode_url(url),
+                discovered_at=_now_ms(),
+                status="extracted",
             )
         )
         job.urls_discovered += 1
@@ -135,7 +144,7 @@ async def _run_link_extraction(db, job: CrawlJob, settings) -> bool:
                 db.add(
                     DiscoveredUrl(
                         job_id=job.id,
-                        url=url,
+                        url=_decode_url(url),
                         discovered_at=_now_ms(),
                         status="extracted",
                     )
@@ -150,7 +159,10 @@ async def _run_link_extraction(db, job: CrawlJob, settings) -> bool:
                 return True
             db.add(
                 DiscoveredUrl(
-                    job_id=job.id, url=url, discovered_at=_now_ms(), status="extracted"
+                    job_id=job.id,
+                    url=_decode_url(url),
+                    discovered_at=_now_ms(),
+                    status="extracted",
                 )
             )
             job.urls_discovered += 1
