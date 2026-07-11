@@ -22,8 +22,7 @@ Follow the existing architecture and coding style. Make the smallest change nece
 
 ## Project Structure
 
-- Each feature lives under `src/api/.../<feature>/` with `router.py` (routes only), `schema.py` (Pydantic models), and `crud.py` (DB access/business logic).
-- Keep business logic out of `router.py`; put it in `crud.py`.
+- Each feature lives under `src/api/.../<feature>/` with `router.py` (routes and DB access/business logic, inline in each endpoint function) and `schema.py` (Pydantic models).
 - Reuse existing modules before creating new ones.
 - Respect the current project architecture.
 
