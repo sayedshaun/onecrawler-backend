@@ -1,5 +1,5 @@
-"""Add refresh_sessions so issued refresh tokens can be listed and revoked
-individually (needed for a "view/revoke active sessions" API).
+"""Add refresh_sessions so issued refresh tokens can be listed and revoked individually
+(needed for a "view/revoke active sessions" API).
 
 Revision ID: 0009
 Revises: 0008
@@ -33,9 +33,7 @@ def upgrade() -> None:
         sa.Column("expires_at", sa.BigInteger(), nullable=False),
         sa.Column("revoked_at", sa.BigInteger(), nullable=True),
     )
-    op.create_index(
-        "ix_refresh_sessions_user_id", "refresh_sessions", ["user_id"]
-    )
+    op.create_index("ix_refresh_sessions_user_id", "refresh_sessions", ["user_id"])
 
 
 def downgrade() -> None:
