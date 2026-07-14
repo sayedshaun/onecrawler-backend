@@ -1,6 +1,14 @@
 # OneCrawler Backend
 
-FastAPI backend for OneCrawler — a web crawling and content-extraction platform. It exposes a REST API for managing crawl jobs, settings, and extracted data, and drives the actual crawling/scraping work through an async job queue backed by [`onecrawler`](https://pypi.org/project/onecrawler/) (browser automation, link extraction, and content filters).
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-arq_queue-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Playwright](https://img.shields.io/badge/Playwright-browser_automation-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
+[![onecrawler](https://img.shields.io/badge/onecrawler-docs-6E56CF)](https://sayedshaun.github.io/onecrawler/)
+
+FastAPI backend for **OneCrawler** — a web crawling and content-extraction platform. It exposes a REST API for auth, crawl jobs, settings, and extracted data, and drives the actual crawling/scraping work through an async job queue backed by [`onecrawler`](https://pypi.org/project/onecrawler/) (browser automation, link extraction, and content filters).
 
 ## Table of Contents
 
@@ -48,7 +56,7 @@ A one-off **`migrate`** service runs `alembic upgrade head` before `fastapi`/`ar
 | Database | PostgreSQL 16 |
 | Job queue | [arq](https://arq-docs.helpmanual.io/) (Redis-backed) |
 | Migrations | Alembic |
-| Auth | JWT (PyJWT) + Argon2 password hashing |
+| Auth | JWT access + refresh tokens (PyJWT) + Argon2 password hashing |
 | Validation / schemas | Pydantic v2 |
 | Crawling engine | [`onecrawler`](https://pypi.org/project/onecrawler/) (Playwright-based) |
 | Linting / formatting | ruff, ruff-format, docformatter (via pre-commit) |
@@ -62,15 +70,22 @@ main.py                     FastAPI app entrypoint (lifespan, middleware, router
 src/
   api/
     security/                JWT auth dependency (get_current_user) + /verify endpoint
-    users/                    register / login / logout
+    users/
+      register/                create a user
+      login/                    authenticate, issue access + refresh tokens
+      logout/                   revoke the current access token and (optionally) a refresh session
+      refresh/                  rotate a refresh token for a new access token
+      account/                  get/rename/change email/change password + usage stats
+      sessions/                 list/revoke active refresh-token sessions
     v1/
-      crawler/                crawl job CRUD, filters, settings schema
+      crawler/                crawl job CRUD, retry, filters, settings schema
       dashboard/               aggregate stats for the UI
       data/                    extracted result items
       settings/                 crawl setting templates + provider API keys
   core/
     config.py                 pydantic-settings Settings (reads .env)
     security.py                JWT + password hashing
+    sessions.py                 refresh-session bookkeeping (record/revoke/revoke-all)
     pool.py                     arq Redis connection pool
   db/
     models.py                   SQLAlchemy ORM models
@@ -138,9 +153,10 @@ All configuration is via environment variables (`.env`, loaded by `src/core/conf
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Postgres credentials | `onecrawler` |
 | `POSTGRES_HOST` / `POSTGRES_PORT` | Postgres connection (compose service name in Docker) | `postgres` / `5432` |
 | `REDIS_URL` | Redis connection for arq's job queue | `redis://redis:6379/0` |
-| `JWT_SECRET_KEY` | Signing key for access tokens — **change this outside local dev** | `dev-secret-change-me` |
+| `JWT_SECRET_KEY` | Signing key for access & refresh tokens — **change this outside local dev** | `dev-secret-change-me` |
 | `JWT_ALGORITHM` | JWT signing algorithm | `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime | `60` |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token lifetime | `30` |
 | `DEFAULT_ADMIN_NAME` / `_EMAIL` / `_PASSWORD` | Seeded admin account (only created if no user with that email exists) | see `.env.example` |
 | `CORS_ORIGINS` | JSON array of allowed origins | `["http://localhost:5173"]` |
 | `LOG_LEVEL` | Root logging level (`DEBUG`/`INFO`/`WARNING`/`ERROR`) for the API and worker | `INFO` |
@@ -176,7 +192,11 @@ Migrations live in [`alembic/versions/`](alembic/versions/) and run automaticall
 
 ## Authentication
 
-Auth is stateless JWT Bearer tokens (`Authorization: Bearer <token>`), issued by `POST /api/users/login` and validated by `HTTPBearer` (`src/api/security/dependencies.py`). Logout adds the token's `jti` to a Redis blocklist so it can't be reused before it expires.
+Auth is JWT Bearer tokens (`Authorization: Bearer <token>`) with a short-lived **access token** plus a longer-lived **refresh token**, issued together by `POST /api/users/login`:
+
+- **Access tokens** are validated by `HTTPBearer` (`src/api/security/dependencies.py`), expire after `ACCESS_TOKEN_EXPIRE_MINUTES`, and are individually revocable via a Redis blocklist keyed by the token's `jti` (used by logout).
+- **Refresh tokens** exchange for a new access/refresh pair at `POST /api/users/refresh`. Each issued refresh token is tracked as a row in the `refresh_sessions` table (`src/core/sessions.py`), which is what makes per-session listing and revocation possible — `GET /api/users/me/sessions` lists active sessions, `DELETE /api/users/me/sessions/{id}` revokes one, and `POST /api/users/me/sessions/revoke-all` revokes all of them (also triggered automatically on password change).
+- Refreshing **rotates** the token: the used refresh token is revoked and a new one issued, so a stolen refresh token stops working the next time the real owner refreshes.
 
 **In Swagger (`/docs`):**
 1. Call `POST /api/users/login` with your email/password (the seeded admin credentials are in `.env`).
@@ -187,26 +207,77 @@ Auth is stateless JWT Bearer tokens (`Authorization: Bearer <token>`), issued by
 
 Full interactive docs (with request/response schemas and a "Try it out" console) are served at `/docs` (Swagger UI) and `/redoc`; the raw OpenAPI spec is at `/openapi.json`.
 
+<details>
+<summary><strong>Misc</strong></summary>
+
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/` | Liveness message |
 | GET | `/api/health` | Health check |
-| POST | `/api/users/register` | Create a user |
-| POST | `/api/users/login` | Get an access token |
-| POST | `/api/users/logout` | Invalidate the current token |
 | GET | `/api/verify` | Verify a token / fetch the current user |
-| POST | `/api/v1/crawls` | Create a crawl job |
-| GET | `/api/v1/crawls` | List crawl jobs |
-| GET | `/api/v1/crawls/{job_id}` | Get a crawl job |
-| DELETE | `/api/v1/crawls/{job_id}` | Delete a crawl job |
+
+</details>
+
+<details open>
+<summary><strong>Users & Auth</strong> — <code>/api/users</code></summary>
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/users/register` | Create a user |
+| POST | `/api/users/login` | Authenticate, get an access + refresh token |
+| POST | `/api/users/logout` | Revoke the current access token (and refresh session, if provided) |
+| POST | `/api/users/refresh` | Rotate a refresh token for a new access/refresh pair |
+| GET | `/api/users/me` | Get the current user's profile |
+| PATCH | `/api/users/me/name` | Rename the current user |
+| PATCH | `/api/users/me/email` | Change email (requires current password) |
+| PATCH | `/api/users/me/password` | Change password (requires current password; revokes all sessions) |
+| GET | `/api/users/me/usage` | Crawl job / URL usage stats |
+| GET | `/api/users/me/sessions` | List active refresh-token sessions |
+| DELETE | `/api/users/me/sessions/{session_id}` | Revoke one session |
+| POST | `/api/users/me/sessions/revoke-all` | Revoke all sessions ("log out everywhere") |
+
+</details>
+
+<details open>
+<summary><strong>Crawls</strong> — <code>/api/v1/crawls</code></summary>
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/v1/crawls` | Create and enqueue a crawl job |
+| GET | `/api/v1/crawls` | List crawl jobs (filter/paginate) |
+| GET | `/api/v1/crawls/{job_id}` | Get a crawl job's detail + throughput history |
+| GET | `/api/v1/crawls/{job_id}/download` | Download a job's results as JSON |
 | GET | `/api/v1/crawls/{job_id}/logs` | Get a job's logs |
 | GET | `/api/v1/crawls/{job_id}/discovered` | List URLs a job discovered |
-| POST | `/api/v1/crawls/{job_id}/cancel` | Cancel a running job |
+| DELETE | `/api/v1/crawls/{job_id}/discovered/{discovered_id}` | Delete a discovered URL |
+| POST | `/api/v1/crawls/{job_id}/scrape` | Scrape a job's discovered URLs as a new job |
+| POST | `/api/v1/crawls/{job_id}/cancel` | Cancel a queued/running job |
+| POST | `/api/v1/crawls/{job_id}/retry` | Re-run a failed job with the same settings |
+| DELETE | `/api/v1/crawls/{job_id}` | Delete a crawl job (must not be active) |
+
+</details>
+
+<details>
+<summary><strong>Dashboard & Data</strong> — <code>/api/v1/dashboard</code>, <code>/api/v1/data</code></summary>
+
+| Method | Path | Description |
+| --- | --- | --- |
 | GET | `/api/v1/dashboard/overview` | Aggregate stats for the dashboard |
-| GET | `/api/v1/data` | List extracted result items |
+| GET | `/api/v1/data` | List/search extracted result items |
 | GET | `/api/v1/data/{result_id}` | Get one extracted result item |
+| GET | `/api/v1/data/{result_id}/download` | Download a result item's content as JSON |
+
+</details>
+
+<details>
+<summary><strong>Settings</strong> — <code>/api/v1/settings</code></summary>
+
+| Method | Path | Description |
+| --- | --- | --- |
 | GET/POST/PUT/DELETE | `/api/v1/settings/templates[/{id}]` | Crawl setting templates |
 | GET/PUT/DELETE | `/api/v1/settings/api-keys[/{provider}]` | Stored GenAI provider API keys |
+
+</details>
 
 ## Crawl Modes, Strategies & Filters
 
@@ -247,9 +318,11 @@ There is no automated test suite yet. Verify changes by exercising the running A
 - Run `alembic upgrade head` before starting new API/worker versions (the `migrate` service in `docker-compose.yml` models this as a one-off job that `fastapi`/`arq` wait on via `service_completed_successfully`).
 - Set a real `JWT_SECRET_KEY` and rotate the seeded default admin password before exposing this beyond local dev.
 - `CORS_ORIGINS` must list your actual frontend origin(s) in production.
+- `refresh_sessions` rows are never deleted, only marked `revoked_at` — there's no cleanup job yet, so the table grows unbounded with login volume. Fine at small scale; add a periodic prune of expired/revoked rows before this matters.
 
 ## Troubleshooting
 
 - **`alembic upgrade head` fails on a running container**: if you're iterating on a migration, copy the updated file into the container (`docker cp`) or rebuild the image — code isn't hot-reloaded unless you're using `docker-compose.dev.yml`'s bind mount.
 - **Windows line endings**: the repo is LF-based; Git will warn about CRLF conversion on Windows checkouts — this is expected and harmless.
 - **A crawl job fails immediately with a date-parsing error**: `filters` nodes of kind `by_date` require `start`/`end` in `YYYY-MM-DD` format; anything else is rejected at request time with a `422`.
+- **`401 Invalid or expired refresh token` right after a password change**: expected — changing your password revokes every refresh session, including the one the client is holding. Log in again.
