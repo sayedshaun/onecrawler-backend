@@ -1,6 +1,8 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from pydantic.alias_generators import to_camel
 
+from src.api.v1.dashboard.schema import JobCountsOut
+
 
 class InSchema(BaseModel):
     """Base for request payloads: accepts the UI's snake_case fields as-is."""
@@ -33,3 +35,13 @@ class ChangePasswordRequest(InSchema):
 
 class ChangePasswordOut(OutSchema):
     detail: str
+
+
+class UsageOut(OutSchema):
+    total_jobs: int
+    job_counts: JobCountsOut
+    urls_discovered: int
+    urls_scraped: int
+    urls_failed: int
+    jobs_this_month: int
+    urls_scraped_this_month: int
