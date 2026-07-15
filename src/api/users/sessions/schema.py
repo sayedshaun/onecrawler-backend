@@ -12,10 +12,34 @@ class OutSchema(BaseModel):
 
 
 class SessionOut(OutSchema):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "8f14e45f-ceea-4d3a-8bd0-8a5f2b1c9e10",
+                "createdAt": 1752480000000,
+                "expiresAt": 1755072000000,
+            }
+        }
+    )
+
     id: str
     created_at: int
     expires_at: int
 
 
 class SessionListOut(OutSchema):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "items": [
+                    {
+                        "id": "8f14e45f-ceea-4d3a-8bd0-8a5f2b1c9e10",
+                        "createdAt": 1752480000000,
+                        "expiresAt": 1755072000000,
+                    }
+                ]
+            }
+        }
+    )
+
     items: list[SessionOut] = Field(default_factory=list)
