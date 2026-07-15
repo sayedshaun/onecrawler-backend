@@ -18,10 +18,27 @@ class OutSchema(BaseModel):
 
 
 class RefreshRequest(InSchema):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {"refresh_token": "8f14e45f-ceea-4d3a-8bd0-8a5f2b1c9e10"}
+        }
+    )
+
     refresh_token: str
 
 
 class RefreshOut(OutSchema):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "refreshToken": "9e14e45f-ceea-4d3a-8bd0-8a5f2b1c9e11",
+                "tokenType": "bearer",
+                "expiresIn": 3600,
+            }
+        }
+    )
+
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
