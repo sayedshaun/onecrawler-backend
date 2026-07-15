@@ -58,6 +58,12 @@ When you need to check its actual API/behavior, don't guess from the GitHub READ
 
 Then read the source under that path for the real classes/functions in use.
 
+## Commit Rules
+
+- Commit messages must be short: one line, imperative mood, `type: description` (e.g. `fix: correct token expiry check`).
+- No body/explanation unless explicitly asked for.
+- Commit one logical change (typically one file) at a time rather than bundling unrelated changes.
+
 ## Before Finishing
 
 Ensure:
