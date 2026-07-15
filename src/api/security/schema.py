@@ -12,6 +12,17 @@ class OutSchema(BaseModel):
 
 
 class CurrentUserOut(OutSchema):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "8f14e45f-ceea-4d3a-8bd0-8a5f2b1c9e10",
+                "name": "Jane Doe",
+                "email": "jane.doe@example.com",
+                "userType": "standard",
+            }
+        }
+    )
+
     id: str
     name: str
     email: str
