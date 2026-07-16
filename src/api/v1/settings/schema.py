@@ -82,9 +82,7 @@ class CrawlTemplateOut(OutSchema):
 
 
 class CrawlTemplateListOut(OutSchema):
-    model_config = ConfigDict(
-        json_schema_extra={"example": {"items": [], "total": 0}}
-    )
+    model_config = ConfigDict(json_schema_extra={"example": {"items": [], "total": 0}})
 
     items: list[CrawlTemplateOut] = Field(default_factory=list)
     total: int

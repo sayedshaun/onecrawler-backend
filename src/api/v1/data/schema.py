@@ -111,7 +111,7 @@ class DataListOut(OutSchema):
                         "wordCount": 842,
                         "format": "markdown",
                         "extractedAt": 1752480060000,
-                        "preview": "We're updating our pricing tiers starting next quarter...",
+                        "preview": "We're updating our pricing tiers next quarter...",
                     }
                 ],
                 "total": 1,
@@ -141,7 +141,7 @@ class DataItemDetailOut(DataItemOut):
                 "extractedAt": 1752480060000,
                 "preview": "We're updating our pricing tiers starting next quarter...",
                 "content": {
-                    "markdown": "# Our 2026 Pricing Update\n\nWe're updating our pricing tiers..."
+                    "markdown": "# Our 2026 Pricing Update\n\nWe're updating tiers..."
                 },
             }
         }
