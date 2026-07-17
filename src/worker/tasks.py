@@ -3,7 +3,7 @@ import time
 from typing import Any
 from urllib.parse import unquote
 
-from onecrawler import Crawler, LinkExtractor, Scraper, UniversalSiteMap
+from onecrawler import Crawler, LinkExtractor, Scraper, SiteMap
 from sqlalchemy import select
 
 from src.db.models import (
@@ -111,7 +111,7 @@ async def run_crawl_job(ctx, job_id: str) -> None:
 
 
 async def _run_sitemap(db, job: CrawlJob, settings) -> bool:
-    engine = UniversalSiteMap(settings)
+    engine = SiteMap(settings)
     urls = await engine.run(job.target_url)
 
     for url in urls:
