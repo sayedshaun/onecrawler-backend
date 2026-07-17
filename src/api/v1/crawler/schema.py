@@ -346,6 +346,15 @@ class ThroughputPointOut(OutSchema):
     pages_per_sec: float
 
 
+class DiscoveryPointOut(OutSchema):
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"t": 1752480060000, "count": 12}}
+    )
+
+    t: int
+    count: int
+
+
 class CrawlJobDetailOut(CrawlJobSummaryOut):
     model_config = ConfigDict(
         json_schema_extra={
@@ -371,12 +380,17 @@ class CrawlJobDetailOut(CrawlJobSummaryOut):
                     {"t": 1752480060000, "pagesPerSec": 1.8},
                     {"t": 1752480120000, "pagesPerSec": 2.1},
                 ],
+                "discoveryHistory": [
+                    {"t": 1752480060000, "count": 8},
+                    {"t": 1752480120000, "count": 20},
+                ],
             }
         }
     )
 
     settings: dict
     throughput_history: list[ThroughputPointOut] = Field(default_factory=list)
+    discovery_history: list[DiscoveryPointOut] = Field(default_factory=list)
 
 
 class CrawlListOut(OutSchema):

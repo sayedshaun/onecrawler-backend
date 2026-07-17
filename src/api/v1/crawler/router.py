@@ -118,11 +118,25 @@ async def get_crawl(
         for second, count in sorted(buckets.items())
     ]
 
+    discovered_result = await db.execute(
+        select(DiscoveredUrl.discovered_at).where(DiscoveredUrl.job_id == job_id)
+    )
+    discovery_buckets: dict[int, int] = {}
+    for (discovered_at,) in discovered_result.all():
+        second = discovered_at // 1000
+        discovery_buckets[second] = discovery_buckets.get(second, 0) + 1
+    discovery_history = []
+    cumulative = 0
+    for second, count in sorted(discovery_buckets.items()):
+        cumulative += count
+        discovery_history.append({"t": second * 1000, "count": cumulative})
+
     return CrawlJobDetailOut.model_validate(
         {
             **{name: getattr(job, name) for name in CrawlJobSummaryOut.model_fields},
             "settings": job.settings,
             "throughput_history": throughput_history,
+            "discovery_history": discovery_history,
         }
     )
 
