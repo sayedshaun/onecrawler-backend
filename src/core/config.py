@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     LOG_LEVEL: str = "INFO"
 
-    JWT_SECRET_KEY: str = "dev-secret-change-me"
+    JWT_SECRET_KEY: str = "dev-secret-change-me-before-deploying"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
