@@ -7,8 +7,8 @@ from typing import Any
 
 from onecrawler import (
     BrowserSettings,
-    GenerativeAISettings,
     HumanBehaviorSettings,
+    LLMSettings,
     ProxySettings,
     Settings,
 )
@@ -68,7 +68,7 @@ async def build_settings(db: AsyncSession, payload: dict, user_id: str) -> Setti
         if api_key is None:
             provider_key = await db.get(ProviderApiKey, (user_id, s.genai.provider))
             api_key = provider_key.api_key if provider_key else None
-        genai = GenerativeAISettings(
+        genai = LLMSettings(
             provider=s.genai.provider,
             model_name=s.genai.model_name,
             api_key=api_key,
@@ -91,20 +91,21 @@ async def build_settings(db: AsyncSession, payload: dict, user_id: str) -> Setti
     if s.browser_settings.user_agent:
         browser_kwargs["user_agent"] = s.browser_settings.user_agent
 
-    human_behavior = (
-        HumanBehaviorSettings(
-            min_delay=s.human_behavior_settings.min_delay,
-            max_delay=s.human_behavior_settings.max_delay,
-            max_scrolls=s.human_behavior_settings.max_scrolls,
-            min_mouse_moves=s.human_behavior_settings.min_mouse_moves,
-            max_mouse_moves=s.human_behavior_settings.max_mouse_moves,
+    human_behavior = None
+    if s.enable_human_behaviors:
+        human_behavior = (
+            HumanBehaviorSettings(
+                min_delay=s.human_behavior_settings.min_delay,
+                max_delay=s.human_behavior_settings.max_delay,
+                max_scrolls=s.human_behavior_settings.max_scrolls,
+                min_mouse_moves=s.human_behavior_settings.min_mouse_moves,
+                max_mouse_moves=s.human_behavior_settings.max_mouse_moves,
+            )
+            if s.human_behavior_settings
+            else HumanBehaviorSettings()
         )
-        if s.human_behavior_settings
-        else HumanBehaviorSettings()
-    )
 
     return Settings(
-        verbose=False,
         link_extraction_strategy=s.link_extraction_strategy,
         link_extraction_limit=s.link_extraction_limit,
         include_link_patterns=s.include_link_patterns,
@@ -120,8 +121,6 @@ async def build_settings(db: AsyncSession, payload: dict, user_id: str) -> Setti
         proxy_rotation_method=s.proxy_rotation_method,
         browser_settings=BrowserSettings(**browser_kwargs),
         show_progress=False,
-        enable_logging=False,
-        enable_human_behaviors=s.enable_human_behaviors,
         human_behavior_settings=human_behavior,
     )
 
