@@ -7,7 +7,7 @@ from pydantic.alias_generators import to_camel
 from src.db.models import CrawlMode, CrawlStatus
 
 LinkExtractionStrategy = Literal["shallow", "deep"]
-ScrapingStrategy = Literal["heuristic", "genai"]
+ScrapingStrategy = Literal["heuristic", "genai", "markdownify"]
 ProxyRotationMethod = Literal["round_robin", "random"]
 GenAIProvider = Literal["openai", "google", "ollama"]
 FilterKind = Literal[
