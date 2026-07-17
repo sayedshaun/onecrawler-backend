@@ -55,6 +55,14 @@ def build_output_schema(fields: dict[str, str]) -> type[BaseModel] | None:
     return create_model("GenAIOutputSchema", **field_defs)
 
 
+def _to_link_patterns(keywords: list[str] | None) -> list[str] | None:
+    """Expands plain path keywords (e.g. "sports") into onecrawler's glob
+    patterns (e.g. "/sports/*"), which is the shape it matches URL paths against."""
+    if not keywords:
+        return None
+    return [f"/{keyword.strip('/')}/*" for keyword in keywords]
+
+
 async def build_settings(db: AsyncSession, payload: dict, user_id: str) -> Settings:
     s = CrawlSettingsIn(**payload)
 
@@ -108,8 +116,8 @@ async def build_settings(db: AsyncSession, payload: dict, user_id: str) -> Setti
     return Settings(
         link_extraction_strategy=s.link_extraction_strategy,
         link_extraction_limit=s.link_extraction_limit,
-        include_link_patterns=s.include_link_patterns,
-        exclude_link_patterns=s.exclude_link_patterns,
+        include_link_patterns=_to_link_patterns(s.include_link_patterns),
+        exclude_link_patterns=_to_link_patterns(s.exclude_link_patterns),
         scraping_strategy=s.scraping_strategy,
         scraping_output_format=ScrapingOutputFormat.JSON,
         genai=genai,

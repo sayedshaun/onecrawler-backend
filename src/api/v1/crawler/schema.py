@@ -210,8 +210,16 @@ class CrawlSettingsIn(InSchema):
 
     link_extraction_strategy: LinkExtractionStrategy = "deep"
     link_extraction_limit: int = 50
-    include_link_patterns: list[str] | None = None
-    exclude_link_patterns: list[str] | None = None
+    include_link_patterns: list[str] | None = Field(
+        default=None,
+        description="Plain path keywords (e.g. 'sports'), not glob patterns. "
+        "The backend expands each into a '/<keyword>/*' pattern for onecrawler.",
+    )
+    exclude_link_patterns: list[str] | None = Field(
+        default=None,
+        description="Plain path keywords (e.g. 'sports'), not glob patterns. "
+        "The backend expands each into a '/<keyword>/*' pattern for onecrawler.",
+    )
 
     scraping_strategy: ScrapingStrategy = "heuristic"
     genai: GenAISettingsIn | None = None
