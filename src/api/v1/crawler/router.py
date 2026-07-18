@@ -380,10 +380,10 @@ async def retry_crawl(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Crawl job not found"
         )
-    if source_job.status != CrawlStatus.FAILED:
+    if source_job.status not in (CrawlStatus.FAILED, CrawlStatus.CANCELLED):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Only failed crawl jobs can be retried",
+            detail="Only failed or cancelled crawl jobs can be retried",
         )
 
     job = CrawlJob(
