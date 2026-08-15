@@ -23,6 +23,14 @@ class CurrentUser:
     exp: int
 
 
+def get_bearer_token(
+    credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
+) -> str:
+    """The raw JWT string, for callers that need to forward it (e.g. the agent's tools
+    calling back into this API's own endpoints)."""
+    return credentials.credentials
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme),
     db: AsyncSession = Depends(get_db),
