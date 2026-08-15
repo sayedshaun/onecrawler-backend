@@ -19,11 +19,6 @@ dependencies = [
     "pyjwt>=2.9.0",
     "argon2-cffi>=23.1.0",
     "email-validator>=2.2.0",
-]
-
-[project.optional-dependencies]
-worker = ["onecrawler @ git+https://github.com/sayedshaun/onecrawler.git"]
-agent = [
     "httpx>=0.27.0",
     "langgraph>=1.0.0",
     "langgraph-checkpoint-postgres>=3.0.0",
@@ -35,6 +30,9 @@ agent = [
     "deepagents>=0.6.0",
     "mlflow==3.14.0",
 ]
+
+[project.optional-dependencies]
+worker = ["onecrawler @ git+https://github.com/sayedshaun/onecrawler.git"]
 
 [tool.setuptools.packages.find]
 where = ["."]
