@@ -35,3 +35,12 @@ RUN pip install --no-cache-dir .[worker]
 RUN playwright install chromium --with-deps
 
 CMD ["arq", "src.worker.settings.WorkerSettings"]
+
+
+# Agent drives the OneCrawler API via LLM tool calling (LangGraph + deepagents),
+# never touches onecrawler/Playwright itself — separate extra, separate image.
+FROM base AS agent
+
+RUN pip install --no-cache-dir .[agent]
+
+CMD ["uvicorn", "src.agent.main:app", "--host", "0.0.0.0", "--port", "8086"]
