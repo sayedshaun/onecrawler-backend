@@ -8,7 +8,7 @@
 [![Playwright](https://img.shields.io/badge/Playwright-browser_automation-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![onecrawler](https://img.shields.io/badge/onecrawler-docs-6E56CF)](https://sayedshaun.github.io/onecrawler/)
 
-FastAPI backend for **OneCrawler** — a web crawling and content-extraction platform. It exposes a REST API for auth, crawl jobs, settings, and extracted data, and drives the actual crawling/scraping work through an async job queue backed by [`onecrawler`](https://pypi.org/project/onecrawler/) (browser automation, link extraction, and content filters).
+FastAPI backend for **OneCrawler** — a web crawling and content-extraction platform. It exposes a REST API for auth, crawl jobs, settings, and extracted data, and drives the actual crawling/scraping work through an async job queue backed by [`onecrawler`](https://pypi.org/project/onecrawler/) (browser automation, link extraction, and content filters). It also includes `agents` — a LangGraph-based deep agent service (`src/agent/`) that drives this same REST API via LLM tool calling.
 
 ## Table of Contents
 
@@ -36,6 +36,9 @@ flowchart LR
     fastapi <-->|reads/writes| postgres[("postgres<br/>jobs, users, results...")]
     redis -->|dequeues| arq["arq<br/>worker: runs crawls"]
     arq -->|writes results| postgres
+    agents["agents<br/>LLM tool-calling service"] -->|calls REST API| fastapi
+    agents <-->|reads/writes| postgres
+    agents -->|tracks runs| mlflow[("mlflow<br/>experiment tracking")]
 
     classDef default stroke:#666,stroke-width:1.5px
 ```
@@ -44,6 +47,7 @@ The API and worker are split into separate containers built from the same [Docke
 
 - **`api`** — only enqueues jobs onto Redis via [arq](https://arq-docs.helpmanual.io/); it never imports `onecrawler` or launches a browser, so its image stays small.
 - **`worker`** — actually drives `onecrawler` + Playwright, so it installs the `onecrawler` package (GenAI extraction is a core dependency now, no extra needed) and Chromium.
+- **`agent`** — builds the `agents` service (`src/agent/`), a standalone [LangGraph](https://www.langchain.com/langgraph)/[deepagents](https://github.com/langchain-ai/deepagents) app that drives this same REST API via LLM tool calling. It shares this repo's Postgres database (own tables, own `DeclarativeBase` — no collision with the API's Alembic-managed tables) and reports experiment runs to `mlflow`.
 
 A one-off **`migrate`** service runs `alembic upgrade head` before `fastapi`/`arq` start (see [docker-compose.yml](docker-compose.yml)).
 
@@ -59,6 +63,7 @@ A one-off **`migrate`** service runs `alembic upgrade head` before `fastapi`/`ar
 | Auth | JWT access + refresh tokens (PyJWT) + Argon2 password hashing |
 | Validation / schemas | Pydantic v2 |
 | Crawling engine | [`onecrawler`](https://pypi.org/project/onecrawler/) (Playwright-based) |
+| Agent service | [LangGraph](https://www.langchain.com/langgraph) + [deepagents](https://github.com/langchain-ai/deepagents), tracked via [MLflow](https://mlflow.org/) |
 | Linting / formatting | ruff, ruff-format, docformatter (via pre-commit) |
 
 Requires Python 3.12+.
@@ -94,6 +99,13 @@ src/
     settings.py                  arq WorkerSettings
     settings_builder.py           maps a CrawlJob's JSON payload to onecrawler Settings/FilterChain
     tasks.py                      the actual crawl job (sitemap / link_extraction / crawler modes)
+  agent/                        standalone LangGraph agent service (own main.py, own src/ tree)
+    main.py                       FastAPI app entrypoint for the agent service
+    api/                          chat + settings endpoints
+    agents/                       LangGraph executor, tools (one per OneCrawler REST endpoint), prompt
+    core/                         agent-specific config (AGENT_-prefixed env vars), OneCrawler API client
+    db/                           agent's own SQLAlchemy models (conversations, chat_messages, agent_settings)
+    static/                       chat UI served at /ui
 alembic/                        migrations
 ```
 
@@ -112,7 +124,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts `postgres`, `redis`, runs migrations (`migrate`), then starts `fastapi` (http://localhost:8000) and the `arq` worker. A default admin user is seeded on first boot from `DEFAULT_ADMIN_*` in `.env`.
+This starts `postgres`, `redis`, `mlflow`, runs migrations (`migrate`), then starts `fastapi` (http://localhost:8000), the `arq` worker, and the `agents` service (http://localhost:8086). A default admin user is seeded on first boot from `DEFAULT_ADMIN_*` in `.env`.
 
 ### Local development (live reload)
 
@@ -160,8 +172,11 @@ All configuration is via environment variables (`.env`, loaded by `src/core/conf
 | `DEFAULT_ADMIN_NAME` / `_EMAIL` / `_PASSWORD` | Seeded admin account (only created if no user with that email exists) | see `.env.example` |
 | `CORS_ORIGINS` | JSON array of allowed origins | `["http://localhost:5173"]` |
 | `LOG_LEVEL` | Root logging level (`DEBUG`/`INFO`/`WARNING`/`ERROR`) for the API and worker | `INFO` |
-| `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT` / `API_HOST_PORT` | Host-side port overrides for docker-compose | commented out |
+| `AGENT_URL` | Base URL the API can reach the `agents` service at (compose service name) | `http://agents:8086` |
+| `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT` / `API_HOST_PORT` / `AGENT_HOST_PORT` / `MLFLOW_HOST_PORT` | Host-side port overrides for docker-compose | commented out |
 | `NGROK_AUTHTOKEN` | Dev-only: public tunnel token for `docker-compose.dev.yml`'s `ngrok` service | unset |
+
+The `agents` service reads its own `AGENT_`-prefixed variables from the same `.env` (see `src/agent/core/config.py`): `AGENT_API_BASE_URL` (defaults to `http://fastapi:8000/api/v1` in compose), `AGENT_MLFLOW_TRACKING_URI` (defaults to `http://mlflow:5000` in compose). It shares this file's `POSTGRES_*` values — no separate database or credentials.
 
 Generate a real `JWT_SECRET_KEY` with:
 
@@ -315,7 +330,7 @@ There is no automated test suite yet. Verify changes by exercising the running A
 
 ## Deployment Notes
 
-- The `api` and `worker` images are independent (see [Dockerfile](Dockerfile) targets) — deploy/scale them separately; only `worker` needs Playwright/Chromium.
+- The `api`, `worker`, and `agent` images are independent (see [Dockerfile](Dockerfile) targets) — deploy/scale them separately; only `worker` needs Playwright/Chromium, only `agent` needs LangGraph/deepagents/mlflow.
 - Run `alembic upgrade head` before starting new API/worker versions (the `migrate` service in `docker-compose.yml` models this as a one-off job that `fastapi`/`arq` wait on via `service_completed_successfully`).
 - Set a real `JWT_SECRET_KEY` and rotate the seeded default admin password before exposing this beyond local dev.
 - `CORS_ORIGINS` must list your actual frontend origin(s) in production.
