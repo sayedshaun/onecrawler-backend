@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import httpx
 
-from .config import settings
+from src.core.config import settings
 
 
 class OneCrawlerClient:
-    """Thin async wrapper around the OneCrawler REST API"""
+    """Thin async wrapper the agent's tools use to drive the OneCrawler REST API on the
+    user's behalf."""
 
     def __init__(self, token: str, base_url: str | None = None) -> None:
         self._token = token
-        self._base_url = base_url or settings.API_BASE_URL
+        self._base_url = base_url or settings.AGENT_API_BASE_URL
 
     async def request(self, method: str, path: str, **kwargs) -> dict:
         headers = {"Authorization": f"Bearer {self._token}"}
@@ -19,18 +20,6 @@ class OneCrawlerClient:
             response.raise_for_status()
             if response.status_code == 204 or not response.content:
                 return {}
-            return response.json()
-
-    async def get_current_user(self) -> dict:
-        """GET /api/users/me — outside the /api/v1 prefix the rest of this
-        client uses. A real, server-verified identity check: unlike decoding
-        the JWT payload ourselves, this fails if the token is invalid/expired
-        rather than trusting an unverified claim."""
-        root = self._base_url.removesuffix("/v1")
-        headers = {"Authorization": f"Bearer {self._token}"}
-        async with httpx.AsyncClient(base_url=root, timeout=30.0) as client:
-            response = await client.request("GET", "/users/me", headers=headers)
-            response.raise_for_status()
             return response.json()
 
     async def create_crawl(self, payload: dict) -> dict:
