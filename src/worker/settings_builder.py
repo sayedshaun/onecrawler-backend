@@ -56,8 +56,8 @@ def build_output_schema(fields: dict[str, str]) -> type[BaseModel] | None:
 
 
 def _to_link_patterns(keywords: list[str] | None) -> list[str] | None:
-    """Expands plain path keywords (e.g. "sports") into onecrawler's glob
-    patterns (e.g. "/sports/*"), which is the shape it matches URL paths against."""
+    """Expands plain path keywords (e.g. "sports") into onecrawler's glob patterns (e.g.
+    "/sports/*"), which is the shape it matches URL paths against."""
     if not keywords:
         return None
     return [f"/{keyword.strip('/')}/*" for keyword in keywords]
