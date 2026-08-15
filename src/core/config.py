@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_EMAIL: str = "sayedshaun4@gmail.com"
     DEFAULT_ADMIN_PASSWORD: str = "shaun@crawler"
 
+    AGENT_URL: str = "http://agents:8086"
+
     @property
     def POSTGRES_URL(self) -> str:
         return (
