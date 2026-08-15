@@ -20,6 +20,10 @@ def build_chat_model(provider: str, model: str, api_key: str):
             api_key=api_key,
             base_url=_OPENROUTER_BASE_URL,
             temperature=0,
+            # Some models default to a very high max output (e.g. 65535 for
+            # gemini-2.5-flash), which free-tier OpenRouter credit balances
+            # can't cover — cap it so requests fit a typical free balance.
+            max_tokens=3000,
         )
 
     if provider not in _PROVIDER_TO_LANGCHAIN:

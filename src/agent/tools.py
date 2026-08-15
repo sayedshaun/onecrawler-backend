@@ -2,7 +2,7 @@ import httpx
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from ..core.client import OneCrawlerClient
+from .core.client import OneCrawlerClient
 
 
 def _client(config: RunnableConfig) -> OneCrawlerClient:

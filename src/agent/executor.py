@@ -1,9 +1,11 @@
 from collections import OrderedDict
+from typing import Any
 
 import mlflow
 from deepagents import create_deep_agent
 
-from ..core.config import settings
+from src.core.config import settings
+
 from .llm import build_chat_model
 from .prompt import SYSTEM_PROMPT
 from .tools import TOOLS
@@ -15,7 +17,7 @@ mlflow.langchain.autolog()
 _MAX_CACHED_AGENTS = 128
 
 _checkpointer = None
-_agent_cache: OrderedDict[tuple[str, str, str], object] = OrderedDict()
+_agent_cache: OrderedDict[tuple[str, str, str], Any] = OrderedDict()
 
 
 def set_checkpointer(checkpointer) -> None:
@@ -25,7 +27,7 @@ def set_checkpointer(checkpointer) -> None:
     _agent_cache.clear()
 
 
-def get_agent(provider: str, model: str, api_key: str):
+def get_agent(provider: str, model: str, api_key: str) -> Any:
     """Return a deep agent for the given provider/model/api_key, building and
     caching it on first use. provider/model/api_key must already be resolved
     (see chat/router.py::_resolve_llm_config) — this service has no shared
