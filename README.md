@@ -8,7 +8,7 @@
 [![Playwright](https://img.shields.io/badge/Playwright-browser_automation-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![onecrawler](https://img.shields.io/badge/onecrawler-docs-6E56CF)](https://sayedshaun.github.io/onecrawler/)
 
-FastAPI backend for **OneCrawler** — a web crawling and content-extraction platform. It exposes a REST API for auth, crawl jobs, settings, and extracted data, and drives the actual crawling/scraping work through an async job queue backed by [`onecrawler`](https://pypi.org/project/onecrawler/) (browser automation, link extraction, and content filters). It also includes `agents` — a LangGraph-based deep agent service (`src/agent/`) that drives this same REST API via LLM tool calling.
+FastAPI backend for **OneCrawler** — a web crawling and content-extraction platform. It exposes a REST API for auth, crawl jobs, settings, and extracted data, and drives the actual crawling/scraping work through an async job queue backed by [`onecrawler`](https://pypi.org/project/onecrawler/) (browser automation, link extraction, and content filters). It also includes an in-process LLM agent that drives this same REST API via tool calling — see [docs/agent.md](docs/agent.md).
 
 ## Table of Contents
 
@@ -31,23 +31,20 @@ FastAPI backend for **OneCrawler** — a web crawling and content-extraction pla
 
 ```mermaid
 flowchart LR
-    client[HTTP clients] --> fastapi["fastapi<br/>REST API: auth, CRUD, job creation"]
+    client[HTTP clients] --> fastapi["fastapi<br/>REST API + in-process LLM agent"]
     fastapi -->|enqueues job| redis[("redis<br/>job queue")]
-    fastapi <-->|reads/writes| postgres[("postgres<br/>jobs, users, results...")]
+    fastapi <-->|reads/writes| postgres[("postgres<br/>jobs, users, results, chats...")]
     redis -->|dequeues| arq["arq<br/>worker: runs crawls"]
     arq -->|writes results| postgres
-    agents["agents<br/>LLM tool-calling service"] -->|calls REST API| fastapi
-    agents <-->|reads/writes| postgres
-    agents -->|tracks runs| mlflow[("mlflow<br/>experiment tracking")]
+    fastapi -->|tracks agent runs| mlflow[("mlflow<br/>experiment tracking")]
 
     classDef default stroke:#666,stroke-width:1.5px
 ```
 
 The API and worker are split into separate containers built from the same [Dockerfile](Dockerfile) with different targets:
 
-- **`api`** — only enqueues jobs onto Redis via [arq](https://arq-docs.helpmanual.io/); it never imports `onecrawler` or launches a browser, so its image stays small.
+- **`api`** — the REST API, including the LangGraph deep agent (`src/agent/`, driven in-process — no separate service or HTTP hop). It never imports `onecrawler` or launches a browser.
 - **`worker`** — actually drives `onecrawler` + Playwright, so it installs the `onecrawler` package (GenAI extraction is a core dependency now, no extra needed) and Chromium.
-- **`agent`** — builds the `agents` service (`src/agent/`), a standalone [LangGraph](https://www.langchain.com/langgraph)/[deepagents](https://github.com/langchain-ai/deepagents) app that drives this same REST API via LLM tool calling. It shares this repo's Postgres database (own tables, own `DeclarativeBase` — no collision with the API's Alembic-managed tables) and reports experiment runs to `mlflow`.
 
 A one-off **`migrate`** service runs `alembic upgrade head` before `fastapi`/`arq` start (see [docker-compose.yml](docker-compose.yml)).
 
@@ -63,7 +60,7 @@ A one-off **`migrate`** service runs `alembic upgrade head` before `fastapi`/`ar
 | Auth | JWT access + refresh tokens (PyJWT) + Argon2 password hashing |
 | Validation / schemas | Pydantic v2 |
 | Crawling engine | [`onecrawler`](https://pypi.org/project/onecrawler/) (Playwright-based) |
-| Agent service | [LangGraph](https://www.langchain.com/langgraph) + [deepagents](https://github.com/langchain-ai/deepagents), tracked via [MLflow](https://mlflow.org/) |
+| LLM agent | [LangGraph](https://www.langchain.com/langgraph) + [deepagents](https://github.com/langchain-ai/deepagents), tracked via [MLflow](https://mlflow.org/) — see [docs/agent.md](docs/agent.md) |
 | Linting / formatting | ruff, ruff-format, docformatter (via pre-commit) |
 
 Requires Python 3.12+.
@@ -71,42 +68,42 @@ Requires Python 3.12+.
 ## Project Structure
 
 ```
-main.py                     FastAPI app entrypoint (lifespan, middleware, router mounts)
-src/
-  api/
-    security/                JWT auth dependency (get_current_user) + /verify endpoint
-    users/
-      register/                create a user
-      login/                    authenticate, issue access + refresh tokens
-      logout/                   revoke the current access token and (optionally) a refresh session
-      refresh/                  rotate a refresh token for a new access token
-      account/                  get/rename/change email/change password + usage stats
-      sessions/                 list/revoke active refresh-token sessions
-    v1/
-      crawler/                crawl job CRUD, retry, filters, settings schema
-      dashboard/               aggregate stats for the UI
-      data/                    extracted result items
-      settings/                 crawl setting templates + provider API keys
-  core/
-    config.py                 pydantic-settings Settings (reads .env)
-    security.py                JWT + password hashing
-    sessions.py                 refresh-session bookkeeping (record/revoke/revoke-all)
-    pool.py                     arq Redis connection pool
-  db/
-    models.py                   SQLAlchemy ORM models
-    pg.py                        async engine/session
-  worker/
-    settings.py                  arq WorkerSettings
-    settings_builder.py           maps a CrawlJob's JSON payload to onecrawler Settings/FilterChain
-    tasks.py                      the actual crawl job (sitemap / link_extraction / crawler modes)
-  agent/                        standalone LangGraph agent service (own main.py, own src/ tree)
-    main.py                       FastAPI app entrypoint for the agent service
-    api/                          chat + settings endpoints
-    agents/                       LangGraph executor, tools (one per OneCrawler REST endpoint), prompt
-    core/                         agent-specific config (AGENT_-prefixed env vars), OneCrawler API client
-    db/                           agent's own SQLAlchemy models (conversations, chat_messages, agent_settings)
-    static/                       chat UI served at /ui
-alembic/                        migrations
+.
+├── main.py                    FastAPI app entrypoint (lifespan, middleware, router mounts)
+├── src/
+│   ├── api/
+│   │   ├── security/            JWT auth dependency (get_current_user) + /verify endpoint
+│   │   ├── users/
+│   │   │   ├── register/          create a user
+│   │   │   ├── login/              authenticate, issue access + refresh tokens
+│   │   │   ├── logout/             revoke the current access token and (optionally) a refresh session
+│   │   │   ├── refresh/            rotate a refresh token for a new access token
+│   │   │   ├── account/            get/rename/change email/change password + usage stats
+│   │   │   └── sessions/           list/revoke active refresh-token sessions
+│   │   └── v1/
+│   │       ├── agent/            chat + agent-settings endpoints (in-process LangGraph agent)
+│   │       ├── crawler/          crawl job CRUD, retry, filters, settings schema
+│   │       ├── dashboard/         aggregate stats for the UI
+│   │       ├── data/              extracted result items
+│   │       └── settings/          crawl setting templates + provider API keys
+│   ├── core/
+│   │   ├── config.py             pydantic-settings Settings (reads .env)
+│   │   ├── security.py           JWT + password hashing
+│   │   ├── sessions.py           refresh-session bookkeeping (record/revoke/revoke-all)
+│   │   └── pool.py               arq Redis connection pool
+│   ├── db/
+│   │   ├── models.py             SQLAlchemy ORM models (includes agent's conversations/chat_messages/agent_settings)
+│   │   └── pg.py                 async engine/session
+│   ├── worker/
+│   │   ├── settings.py           arq WorkerSettings
+│   │   ├── settings_builder.py   maps a CrawlJob's JSON payload to onecrawler Settings/FilterChain
+│   │   └── tasks.py              the actual crawl job (sitemap / link_extraction / crawler modes)
+│   └── agent/                  LangGraph agent engine, driven in-process by src/api/v1/agent
+│                                  (see docs/agent.md)
+├── alembic/                    migrations
+└── docs/
+    ├── agent.md                  LLM agent architecture, endpoints, config
+    └── apis.md                   full route index by area
 ```
 
 ## Getting Started
@@ -124,7 +121,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-This starts `postgres`, `redis`, `mlflow`, runs migrations (`migrate`), then starts `fastapi` (http://localhost:8000), the `arq` worker, and the `agents` service (http://localhost:8086). A default admin user is seeded on first boot from `DEFAULT_ADMIN_*` in `.env`.
+This starts `postgres`, `redis`, `mlflow`, runs migrations (`migrate`), then starts `fastapi` (http://localhost:8000, including the LLM agent) and the `arq` worker. A default admin user is seeded on first boot from `DEFAULT_ADMIN_*` in `.env`.
 
 ### Local development (live reload)
 
@@ -146,7 +143,7 @@ This dev overlay also starts an `ngrok` container that tunnels `fastapi` to a pu
 
 ```bash
 python -m venv .venv && source .venv/bin/activate   # or .venv\Scripts\activate on Windows
-pip install -e .[worker]        # omit [worker] if you only need the API
+pip install -e .[worker]        # omit [worker] if you only need the API (agent deps are already core)
 playwright install chromium --with-deps   # only needed to actually run crawls
 
 cp .env.example .env   # point POSTGRES_HOST / REDIS_URL at your local services
@@ -172,11 +169,10 @@ All configuration is via environment variables (`.env`, loaded by `src/core/conf
 | `DEFAULT_ADMIN_NAME` / `_EMAIL` / `_PASSWORD` | Seeded admin account (only created if no user with that email exists) | see `.env.example` |
 | `CORS_ORIGINS` | JSON array of allowed origins | `["http://localhost:5173"]` |
 | `LOG_LEVEL` | Root logging level (`DEBUG`/`INFO`/`WARNING`/`ERROR`) for the API and worker | `INFO` |
-| `AGENT_URL` | Base URL the API can reach the `agents` service at (compose service name) | `http://agents:8086` |
-| `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT` / `API_HOST_PORT` / `AGENT_HOST_PORT` / `MLFLOW_HOST_PORT` | Host-side port overrides for docker-compose | commented out |
+| `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT` / `API_HOST_PORT` / `MLFLOW_HOST_PORT` | Host-side port overrides for docker-compose | commented out |
 | `NGROK_AUTHTOKEN` | Dev-only: public tunnel token for `docker-compose.dev.yml`'s `ngrok` service | unset |
 
-The `agents` service reads its own `AGENT_`-prefixed variables from the same `.env` (see `src/agent/core/config.py`): `AGENT_API_BASE_URL` (defaults to `http://fastapi:8000/api/v1` in compose), `AGENT_MLFLOW_TRACKING_URI` (defaults to `http://mlflow:5000` in compose). It shares this file's `POSTGRES_*` values — no separate database or credentials.
+See [docs/agent.md](docs/agent.md#configuration) for the LLM agent's `MLFLOW_*` / `AGENT_API_BASE_URL` variables — it shares this same `src/core/config.py`, no separate config file.
 
 Generate a real `JWT_SECRET_KEY` with:
 
@@ -220,79 +216,7 @@ Auth is JWT Bearer tokens (`Authorization: Bearer <token>`) with a short-lived *
 
 ## API Reference
 
-Full interactive docs (with request/response schemas and a "Try it out" console) are served at `/docs` (Swagger UI) and `/redoc`; the raw OpenAPI spec is at `/openapi.json`.
-
-<details>
-<summary><strong>Misc</strong></summary>
-
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/` | Liveness message |
-| GET | `/api/health` | Health check |
-| GET | `/api/verify` | Verify a token / fetch the current user |
-
-</details>
-
-<details open>
-<summary><strong>Users & Auth</strong> — <code>/api/users</code></summary>
-
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/api/users/register` | Create a user |
-| POST | `/api/users/login` | Authenticate, get an access + refresh token |
-| POST | `/api/users/logout` | Revoke the current access token (and refresh session, if provided) |
-| POST | `/api/users/refresh` | Rotate a refresh token for a new access/refresh pair |
-| GET | `/api/users/me` | Get the current user's profile |
-| PATCH | `/api/users/me/name` | Rename the current user |
-| PATCH | `/api/users/me/email` | Change email (requires current password) |
-| PATCH | `/api/users/me/password` | Change password (requires current password; revokes all sessions) |
-| GET | `/api/users/me/usage` | Crawl job / URL usage stats |
-| GET | `/api/users/me/sessions` | List active refresh-token sessions |
-| DELETE | `/api/users/me/sessions/{session_id}` | Revoke one session |
-| POST | `/api/users/me/sessions/revoke-all` | Revoke all sessions ("log out everywhere") |
-
-</details>
-
-<details open>
-<summary><strong>Crawls</strong> — <code>/api/v1/crawls</code></summary>
-
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/api/v1/crawls` | Create and enqueue a crawl job |
-| GET | `/api/v1/crawls` | List crawl jobs (filter/paginate) |
-| GET | `/api/v1/crawls/{job_id}` | Get a crawl job's detail + throughput history |
-| GET | `/api/v1/crawls/{job_id}/download` | Download a job's results as JSON |
-| GET | `/api/v1/crawls/{job_id}/logs` | Get a job's logs |
-| GET | `/api/v1/crawls/{job_id}/discovered` | List URLs a job discovered |
-| DELETE | `/api/v1/crawls/{job_id}/discovered/{discovered_id}` | Delete a discovered URL |
-| POST | `/api/v1/crawls/{job_id}/scrape` | Scrape a job's discovered URLs as a new job |
-| POST | `/api/v1/crawls/{job_id}/cancel` | Cancel a queued/running job |
-| POST | `/api/v1/crawls/{job_id}/retry` | Re-run a failed job with the same settings |
-| DELETE | `/api/v1/crawls/{job_id}` | Delete a crawl job (must not be active) |
-
-</details>
-
-<details>
-<summary><strong>Dashboard & Data</strong> — <code>/api/v1/dashboard</code>, <code>/api/v1/data</code></summary>
-
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/v1/dashboard/overview` | Aggregate stats for the dashboard |
-| GET | `/api/v1/data` | List/search extracted result items |
-| GET | `/api/v1/data/{result_id}` | Get one extracted result item |
-| GET | `/api/v1/data/{result_id}/download` | Download a result item's content as JSON |
-
-</details>
-
-<details>
-<summary><strong>Settings</strong> — <code>/api/v1/settings</code></summary>
-
-| Method | Path | Description |
-| --- | --- | --- |
-| GET/POST/PUT/DELETE | `/api/v1/settings/templates[/{id}]` | Crawl setting templates |
-| GET/PUT/DELETE | `/api/v1/settings/api-keys[/{provider}]` | Stored GenAI provider API keys |
-
-</details>
+Full interactive docs (with request/response schemas and a "Try it out" console) are served at `/docs` (Swagger UI) and `/redoc`; the raw OpenAPI spec is at `/openapi.json`. See [docs/apis.md](docs/apis.md) for a route index grouped by area (users/auth, crawls, dashboard/data, settings, agent).
 
 ## Crawl Modes, Strategies & Filters
 
@@ -330,7 +254,7 @@ There is no automated test suite yet. Verify changes by exercising the running A
 
 ## Deployment Notes
 
-- The `api`, `worker`, and `agent` images are independent (see [Dockerfile](Dockerfile) targets) — deploy/scale them separately; only `worker` needs Playwright/Chromium, only `agent` needs LangGraph/deepagents/mlflow.
+- The `api` and `worker` images are independent (see [Dockerfile](Dockerfile) targets) — deploy/scale them separately; only `worker` needs Playwright/Chromium. `api` includes the LangGraph/deepagents/mlflow deps for the in-process agent.
 - Run `alembic upgrade head` before starting new API/worker versions (the `migrate` service in `docker-compose.yml` models this as a one-off job that `fastapi`/`arq` wait on via `service_completed_successfully`).
 - Set a real `JWT_SECRET_KEY` and rotate the seeded default admin password before exposing this beyond local dev.
 - `CORS_ORIGINS` must list your actual frontend origin(s) in production.
