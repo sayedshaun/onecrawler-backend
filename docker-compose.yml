@@ -49,6 +49,8 @@ services:
     ports:
       - "${API_HOST_PORT:-8000}:8000"
     env_file: .env
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,6 +58,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      mlflow:
+        condition: service_started
 
   arq:
     build:
@@ -72,5 +76,17 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  mlflow:
+    container_name: onecrawler-mlflow
+    image: ghcr.io/mlflow/mlflow:v3.14.0
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow-data/mlflow.db --artifacts-destination /mlflow-data/artifacts --serve-artifacts --allowed-hosts mlflow,mlflow:5000,localhost,localhost:5001
+    restart: unless-stopped
+    ports:
+      - "${MLFLOW_HOST_PORT:-5001}:5000"
+    volumes:
+      - mlflow-data:/mlflow-data
+
 volumes:
   postgres-data:
+  mlflow-data:

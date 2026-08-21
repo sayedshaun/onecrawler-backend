@@ -9,8 +9,9 @@ WORKDIR /app
 COPY . .
 
 
-# The API only enqueues jobs onto Redis, it never imports onecrawler or
-# launches a browser — so it doesn't need the onecrawler package at all.
+# The API never imports onecrawler or launches a browser (that's the
+# worker's job) but does drive the agent (LangGraph + deepagents) in-process,
+# so its own dependencies cover that.
 FROM base AS api
 
 RUN pip install --no-cache-dir .
