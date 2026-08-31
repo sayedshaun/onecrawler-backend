@@ -35,7 +35,10 @@ dependencies = [
 worker = ["onecrawler @ git+https://github.com/sayedshaun/onecrawler.git"]
 dev = [
     "pytest>=8.3.0",
-    "pytest-asyncio>=0.24.0",
+    # 0.26 is the first release with asyncio_default_test_loop_scope, which the suite
+    # needs: src.db.pg builds one engine at import time, so its pooled connections must
+    # stay on a single loop for the whole session.
+    "pytest-asyncio>=0.26.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -44,6 +47,8 @@ include = ["src*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 
 [tool.ruff]
