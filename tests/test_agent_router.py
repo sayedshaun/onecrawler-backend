@@ -175,3 +175,27 @@ async def test_another_user_cannot_read_first_users_conversation(
 
     list_response = await client.get("/api/v1/chats")
     assert list_response.json() == []
+
+
+async def test_chat_maps_provider_failure_to_502(
+    client: AsyncClient, monkeypatch
+) -> None:
+    await client.put(
+        "/api/v1/settings/agent",
+        json={"llm": {"provider": "openai", "model": "gpt-4o", "api_key": "sk-bad"}},
+    )
+
+    agent = AsyncMock()
+    agent.ainvoke.side_effect = RuntimeError("Error code: 401 - invalid api key")
+    monkeypatch.setattr("src.api.v1.agent.router.get_agent", lambda *a, **k: agent)
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "hi", "conversation_id": "conv-fail"},
+    )
+    assert response.status_code == 502
+    assert "invalid api key" in response.json()["detail"]
+
+    # A failed run must not leave a half-written turn behind.
+    list_response = await client.get("/api/v1/chats")
+    assert list_response.json() == []
