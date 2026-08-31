@@ -207,7 +207,10 @@ async def run_crawler(db, job: CrawlJob, settings, filters) -> bool:
 
 
 async def run_scraper(db, job: CrawlJob, settings) -> bool:
-    urls = job.seed_urls or []
+    # A job created straight from POST /crawls has no seed_urls — create_crawl only
+    # records target_url, and scraping that URL is the whole point of this mode.
+    # seed_urls is set only by scrape-from-discovered and by retry.
+    urls = job.seed_urls or [job.target_url]
     async with Scraper(settings) as engine:
         async for item in engine.stream(urls):
             if await is_cancelled(db, job.id):
@@ -239,4 +242,6 @@ async def run_scraper(db, job: CrawlJob, settings) -> bool:
             job.urls_scraped += 1
             await db.commit()
 
+    if job.urls_scraped == 0:
+        await log(db, job.id, "warn", f"Scraped nothing from {len(urls)} URL(s)")
     return False
