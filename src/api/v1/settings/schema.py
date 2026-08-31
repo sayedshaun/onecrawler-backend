@@ -19,9 +19,6 @@ class OutSchema(BaseModel):
     )
 
 
-# ---- crawl settings templates ----
-
-
 _TEMPLATE_SETTINGS_EXAMPLE = {
     "link_extraction_strategy": "deep",
     "link_extraction_limit": 50,
@@ -86,9 +83,6 @@ class CrawlTemplateListOut(OutSchema):
 
     items: list[CrawlTemplateOut] = Field(default_factory=list)
     total: int
-
-
-# ---- provider API keys ----
 
 
 class ApiKeyIn(InSchema):

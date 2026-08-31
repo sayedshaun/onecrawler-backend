@@ -25,9 +25,6 @@ router = APIRouter(prefix="/settings", tags=["Settings"])
 PROVIDERS: tuple[str, ...] = get_args(GenAIProvider)
 
 
-# ---- crawl settings templates ----
-
-
 @router.post(
     "/templates", response_model=CrawlTemplateOut, status_code=status.HTTP_201_CREATED
 )
@@ -145,9 +142,6 @@ async def delete_crawl_template(
         )
     await db.delete(template)
     await db.commit()
-
-
-# ---- provider API keys ----
 
 
 @router.get("/api-keys", response_model=list[ApiKeyOut])
