@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.security.dependencies import CurrentUser, get_current_user
+from src.api.types import UuidPath
 from src.api.v1.crawler.schema import GenAIProvider
 from src.api.v1.settings.schema import (
     ApiKeyIn,
@@ -22,9 +23,6 @@ from src.db.pg import get_db
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
 PROVIDERS: tuple[str, ...] = get_args(GenAIProvider)
-
-
-# ---- crawl settings templates ----
 
 
 @router.post(
@@ -74,7 +72,7 @@ async def list_crawl_templates(
 
 @router.get("/templates/{template_id}", response_model=CrawlTemplateOut)
 async def get_crawl_template(
-    template_id: str,
+    template_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -93,7 +91,7 @@ async def get_crawl_template(
 
 @router.put("/templates/{template_id}", response_model=CrawlTemplateOut)
 async def update_crawl_template(
-    template_id: str,
+    template_id: UuidPath,
     payload: CrawlTemplateIn,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -128,7 +126,7 @@ async def update_crawl_template(
 
 @router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_crawl_template(
-    template_id: str,
+    template_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -144,9 +142,6 @@ async def delete_crawl_template(
         )
     await db.delete(template)
     await db.commit()
-
-
-# ---- provider API keys ----
 
 
 @router.get("/api-keys", response_model=list[ApiKeyOut])

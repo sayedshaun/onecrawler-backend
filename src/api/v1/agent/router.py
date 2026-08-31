@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -30,6 +31,8 @@ from .schema import (
 )
 
 router = APIRouter(tags=["Agent"])
+
+logger = logging.getLogger(__name__)
 
 _TITLE_MAX_LEN = 60
 
@@ -170,10 +173,22 @@ async def chat(
     )
 
     agent = get_agent(provider, model, api_key)
-    result = await agent.ainvoke(
-        {"messages": [HumanMessage(content=payload.message)]},
-        config=agent_config(payload, token, search_api_key),
-    )
+    try:
+        result = await agent.ainvoke(
+            {"messages": [HumanMessage(content=payload.message)]},
+            config=agent_config(payload, token, search_api_key),
+        )
+    except Exception as exc:
+        # The provider SDKs each raise their own error types (bad api key, rate limit,
+        # timeout), so there's no useful set to enumerate here. Report it as an upstream
+        # failure instead of a 500, matching the "error" event /chat/stream emits.
+        logger.exception(
+            "Agent run failed for conversation %s", payload.conversation_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Agent run failed: {exc}",
+        ) from exc
     reply = result["messages"][-1].content
     await _record_turn(
         db, current_user.id, payload.conversation_id, payload.message, reply

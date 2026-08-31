@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
-from src.db.models import CrawlMode, CrawlStatus
+from src.db.models import CrawlMode, CrawlStatus, ScrapingOutputFormat
 
 LinkExtractionStrategy = Literal["shallow", "deep"]
 ScrapingStrategy = Literal["heuristic", "genai", "markdownify"]
@@ -187,6 +187,7 @@ class CrawlSettingsIn(InSchema):
                 "include_link_patterns": None,
                 "exclude_link_patterns": None,
                 "scraping_strategy": "heuristic",
+                "scraping_output_format": "json",
                 "genai": None,
                 "concurrency": 10,
                 "max_retries": 2,
@@ -222,6 +223,7 @@ class CrawlSettingsIn(InSchema):
     )
 
     scraping_strategy: ScrapingStrategy = "heuristic"
+    scraping_output_format: ScrapingOutputFormat = ScrapingOutputFormat.JSON
     genai: GenAISettingsIn | None = None
 
     concurrency: int = 10
