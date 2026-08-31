@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.security.dependencies import CurrentUser, get_current_user
+from src.api.types import UuidPath
 from src.api.v1.crawler.schema import (
     CrawlJobDetailOut,
     CrawlJobSummaryOut,
@@ -92,7 +93,7 @@ async def list_crawls(
 
 @router.get("/{job_id}", response_model=CrawlJobDetailOut)
 async def get_crawl(
-    job_id: str,
+    job_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -143,7 +144,7 @@ async def get_crawl(
 
 @router.get("/{job_id}/download")
 async def download_crawl_results(
-    job_id: str,
+    job_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -184,7 +185,7 @@ async def download_crawl_results(
 
 @router.get("/{job_id}/logs", response_model=LogListOut)
 async def get_crawl_logs(
-    job_id: str,
+    job_id: UuidPath,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -216,7 +217,7 @@ async def get_crawl_logs(
 
 @router.get("/{job_id}/discovered", response_model=DiscoveredListOut)
 async def list_discovered_urls(
-    job_id: str,
+    job_id: UuidPath,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -252,8 +253,8 @@ async def list_discovered_urls(
     "/{job_id}/discovered/{discovered_id}", status_code=status.HTTP_204_NO_CONTENT
 )
 async def delete_discovered_url(
-    job_id: str,
-    discovered_id: str,
+    job_id: UuidPath,
+    discovered_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -287,7 +288,7 @@ async def delete_discovered_url(
     status_code=status.HTTP_201_CREATED,
 )
 async def scrape_discovered_urls(
-    job_id: str,
+    job_id: UuidPath,
     payload: ScrapeFromDiscoveredRequest,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
@@ -338,7 +339,7 @@ async def scrape_discovered_urls(
 
 @router.post("/{job_id}/cancel", response_model=CrawlJobSummaryOut)
 async def cancel_crawl(
-    job_id: str,
+    job_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -367,7 +368,7 @@ async def cancel_crawl(
     status_code=status.HTTP_201_CREATED,
 )
 async def retry_crawl(
-    job_id: str,
+    job_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -410,7 +411,7 @@ async def retry_crawl(
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_crawl(
-    job_id: str,
+    job_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):

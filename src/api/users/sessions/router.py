@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.security.dependencies import CurrentUser, get_current_user
+from src.api.types import UuidPath
 from src.api.users.sessions.schema import SessionListOut, SessionOut
 from src.core.sessions import revoke_all_refresh_sessions
 from src.db.models import RefreshSession
@@ -39,7 +40,7 @@ async def list_sessions(
 
 @router.delete("/me/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_session(
-    session_id: str,
+    session_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):

@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.security.dependencies import CurrentUser, get_current_user
+from src.api.types import UuidPath, UuidQuery
 from src.api.v1.data.schema import (
     DataExportRequest,
     DataItemDetailOut,
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/data", tags=["Data"])
 
 @router.get("", response_model=DataListOut)
 async def list_data(
-    job_id: str | None = None,
+    job_id: UuidQuery = None,
     format: str | None = None,
     q: str | None = None,
     limit: int = Query(50, ge=1, le=200),
@@ -162,7 +163,7 @@ async def export_data(
 
 @router.get("/{result_id}", response_model=DataItemDetailOut)
 async def get_data_item(
-    result_id: str,
+    result_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):
@@ -195,7 +196,7 @@ async def get_data_item(
 
 @router.get("/{result_id}/download")
 async def download_data_item(
-    result_id: str,
+    result_id: UuidPath,
     db: AsyncSession = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ):

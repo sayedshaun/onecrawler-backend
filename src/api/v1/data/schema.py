@@ -3,6 +3,7 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
+from src.api.types import UuidStr
 from src.db.models import ScrapingOutputFormat
 
 
@@ -48,11 +49,11 @@ class DataExportRequest(InSchema):
     )
 
     # Selection mode A: explicit rows the user checked in the UI.
-    ids: list[str] | None = Field(default=None, max_length=500)
+    ids: list[UuidStr] | None = Field(default=None, max_length=500)
 
     # Selection mode B: same filters as GET /api/v1/data — export every
     # matching row, not just the current page.
-    job_id: str | None = None
+    job_id: UuidStr | None = None
     format: str | None = None
     q: str | None = None
 
