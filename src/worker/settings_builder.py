@@ -24,7 +24,7 @@ from pydantic import BaseModel, create_model
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.v1.crawler.schema import CrawlSettingsIn, FilterGroupIn
-from src.db.models import ProviderApiKey, ScrapingOutputFormat
+from src.db.models import ProviderApiKey
 
 _BASE_TYPES: dict[str, type] = {
     "str": str,
@@ -119,7 +119,7 @@ async def build_settings(db: AsyncSession, payload: dict, user_id: str) -> Setti
         include_link_patterns=_to_link_patterns(s.include_link_patterns),
         exclude_link_patterns=_to_link_patterns(s.exclude_link_patterns),
         scraping_strategy=s.scraping_strategy,
-        scraping_output_format=ScrapingOutputFormat.JSON,
+        scraping_output_format=s.scraping_output_format,
         genai=genai,
         concurrency=s.concurrency,
         max_retries=s.max_retries,
