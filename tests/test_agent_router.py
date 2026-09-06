@@ -1,14 +1,14 @@
 from unittest.mock import AsyncMock
 
+from deepharness import AgentState, Finished, TextDelta
 from httpx import AsyncClient
-from langchain_core.messages import AIMessage
 
 from src.api.security.dependencies import CurrentUser
 
 
 def _fake_agent(reply: str = "hello there") -> AsyncMock:
     agent = AsyncMock()
-    agent.ainvoke.return_value = {"messages": [AIMessage(content=reply)]}
+    agent.arun.return_value = AgentState(output=reply, stop_reason="answer")
     return agent
 
 
@@ -106,7 +106,7 @@ async def test_chat_success_records_turn_and_conversation(
         "conversation_id": "conv-1",
         "reply": "42 is the answer",
     }
-    fake_agent.ainvoke.assert_awaited_once()
+    fake_agent.arun.assert_awaited_once()
 
     list_response = await client.get("/api/v1/chats")
     assert [c["conversation_id"] for c in list_response.json()] == ["conv-1"]
@@ -186,7 +186,7 @@ async def test_chat_maps_provider_failure_to_502(
     )
 
     agent = AsyncMock()
-    agent.ainvoke.side_effect = RuntimeError("Error code: 401 - invalid api key")
+    agent.arun.side_effect = RuntimeError("Error code: 401 - invalid api key")
     monkeypatch.setattr("src.api.v1.agent.router.get_agent", lambda *a, **k: agent)
 
     response = await client.post(
@@ -199,3 +199,87 @@ async def test_chat_maps_provider_failure_to_502(
     # A failed run must not leave a half-written turn behind.
     list_response = await client.get("/api/v1/chats")
     assert list_response.json() == []
+
+
+async def test_chat_replays_stored_history_as_context(
+    client: AsyncClient, monkeypatch
+) -> None:
+    await client.put(
+        "/api/v1/settings/agent",
+        json={"llm": {"provider": "openai", "model": "gpt-4o", "api_key": "sk-1"}},
+    )
+    agent = _fake_agent("second reply")
+    monkeypatch.setattr("src.api.v1.agent.router.get_agent", lambda *a, **k: agent)
+
+    await client.post(
+        "/api/v1/chat", json={"message": "first", "conversation_id": "conv-mem"}
+    )
+    await client.post(
+        "/api/v1/chat", json={"message": "second", "conversation_id": "conv-mem"}
+    )
+
+    # No checkpointer any more: the second run must carry the first turn itself.
+    messages = agent.arun.await_args.args[0]["messages"]
+    assert [(m.role, m.content) for m in messages] == [
+        ("user", "first"),
+        ("assistant", "second reply"),
+        ("user", "second"),
+    ]
+
+
+async def test_chat_without_an_answer_is_502(client: AsyncClient, monkeypatch) -> None:
+    await client.put(
+        "/api/v1/settings/agent",
+        json={"llm": {"provider": "openai", "model": "gpt-4o", "api_key": "sk-1"}},
+    )
+    agent = AsyncMock()
+    agent.arun.return_value = AgentState(output="", stop_reason="step_budget")
+    monkeypatch.setattr("src.api.v1.agent.router.get_agent", lambda *a, **k: agent)
+
+    response = await client.post(
+        "/api/v1/chat", json={"message": "hi", "conversation_id": "conv-budget"}
+    )
+    assert response.status_code == 502
+    assert "step_budget" in response.json()["detail"]
+
+
+async def test_chat_stream_emits_tokens_tool_events_and_records_the_answer(
+    client: AsyncClient, monkeypatch
+) -> None:
+    await client.put(
+        "/api/v1/settings/agent",
+        json={"llm": {"provider": "openai", "model": "gpt-4o", "api_key": "sk-1"}},
+    )
+
+    class FakeAgent:
+        name = "onecrawler"
+
+        async def astream_events(self, state, *, deps):
+            # What EventToolbox pushes while the model's tool calls run.
+            await deps.events.put(
+                {"kind": "tool_call", "name": "get_crawl", "args": {"job_id": "j1"}}
+            )
+            await deps.events.put(
+                {"kind": "tool_result", "name": "get_crawl", "result": {"s": "done"}}
+            )
+            yield TextDelta("job ")
+            yield TextDelta("j1 is done")
+            yield Finished(AgentState(output="job j1 is done", stop_reason="answer"))
+
+    monkeypatch.setattr(
+        "src.api.v1.agent.router.get_agent", lambda *a, **k: FakeAgent()
+    )
+
+    response = await client.post(
+        "/api/v1/chat/stream",
+        json={"message": "how is j1?", "conversation_id": "conv-stream"},
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert '"delta": "job "' in body
+    assert '"name": "get_crawl"' in body
+    assert '"kind": "ToolMessage"' in body
+    assert body.endswith("event: done\ndata: {}\n\n")
+
+    detail = await client.get("/api/v1/chats/conv-stream")
+    assert detail.json()["messages"][1]["content"] == "job j1 is done"
