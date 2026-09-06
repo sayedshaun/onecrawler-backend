@@ -9,6 +9,8 @@ os.environ.setdefault("POSTGRES_DB", "onecrawler_test")
 os.environ.setdefault("POSTGRES_USER", "onecrawler")
 os.environ.setdefault("POSTGRES_PASSWORD", "onecrawler")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
+# Empty disables MLflow tracing, so tests never export spans (src/agent/tracing.py).
+os.environ.setdefault("MLFLOW_TRACKING_URI", "")
 
 import uuid
 from collections.abc import AsyncIterator
