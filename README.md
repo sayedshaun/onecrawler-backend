@@ -5,27 +5,9 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-arq_queue-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Playwright](https://img.shields.io/badge/Playwright-browser_automation-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
-[![onecrawler](https://img.shields.io/badge/onecrawler-docs-6E56CF)](https://sayedshaun.github.io/onecrawler/)
+[![License](https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-blue)](LICENSE)
 
-FastAPI backend for **OneCrawler** — a web crawling and content-extraction platform. It exposes a REST API for auth, crawl jobs, settings, and extracted data, and drives the actual crawling/scraping work through an async job queue backed by [`onecrawler`](https://pypi.org/project/onecrawler/) (browser automation, link extraction, and content filters). It also includes an in-process LLM agent that drives this same REST API via tool calling — see [docs/agent.md](docs/agent.md).
-
-## Table of Contents
-
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Configuration](#configuration)
-- [Logging](#logging)
-- [Database Migrations](#database-migrations)
-- [Authentication](#authentication)
-- [API Reference](#api-reference)
-- [Crawl Modes, Strategies & Filters](#crawl-modes-strategies--filters)
-- [Development](#development)
-- [Testing](#testing)
-- [Deployment Notes](#deployment-notes)
-- [Troubleshooting](#troubleshooting)
+FastAPI backend for **OneCrawler**, a web crawling and content-extraction platform. It exposes a REST API for auth, crawl jobs, settings, and extracted data, and runs the crawling work through an async queue backed by [`onecrawler`](https://pypi.org/project/onecrawler/). It also ships an in-process LLM agent that drives this same REST API via tool calling — see [docs/agent.md](docs/agent.md).
 
 ## Architecture
 
@@ -41,228 +23,168 @@ flowchart LR
     classDef default stroke:#666,stroke-width:1.5px
 ```
 
-The API and worker are split into separate containers built from the same [Dockerfile](Dockerfile) with different targets:
+API and worker are separate containers from the same [Dockerfile](Dockerfile), built at different targets:
 
-- **`api`** — the REST API, including the LangGraph deep agent (`src/agent/`, driven in-process — no separate service or HTTP hop). It never imports `onecrawler` or launches a browser.
-- **`worker`** — actually drives `onecrawler` + Playwright, so it installs the `onecrawler` package (GenAI extraction is a core dependency now, no extra needed) and Chromium.
+- **`api`** — REST API plus the deepharness agent (`src/agent/`, in-process, no extra hop). Never imports `onecrawler` or launches a browser.
+- **`worker`** — drives `onecrawler` + Playwright, so it installs the `onecrawler` package and Chromium.
 
-A one-off **`migrate`** service runs `alembic upgrade head` before `fastapi`/`arq` start (see [docker-compose.yml](docker-compose.yml)).
+A one-off **`migrate`** service runs `alembic upgrade head` before `fastapi`/`arq` start.
 
 ## Tech Stack
 
 | Concern | Choice |
 | --- | --- |
 | Web framework | [FastAPI](https://fastapi.tiangolo.com/) + Uvicorn |
-| ORM / DB driver | SQLAlchemy 2.0 (async) + asyncpg |
-| Database | PostgreSQL 16 |
+| ORM / DB | SQLAlchemy 2.0 (async) + asyncpg, PostgreSQL 16 |
 | Job queue | [arq](https://arq-docs.helpmanual.io/) (Redis-backed) |
 | Migrations | Alembic |
-| Auth | JWT access + refresh tokens (PyJWT) + Argon2 password hashing |
-| Validation / schemas | Pydantic v2 |
+| Auth | JWT access + refresh tokens (PyJWT), Argon2 hashing |
+| Validation | Pydantic v2 |
 | Crawling engine | [`onecrawler`](https://pypi.org/project/onecrawler/) (Playwright-based) |
-| LLM agent | [LangGraph](https://www.langchain.com/langgraph) + [deepagents](https://github.com/langchain-ai/deepagents), tracked via [MLflow](https://mlflow.org/) — see [docs/agent.md](docs/agent.md) |
-| Linting / formatting | ruff, ruff-format, docformatter (via pre-commit) |
+| LLM agent | [deepharness](https://sayedshaun.github.io/deepharness/), traced via [MLflow](https://mlflow.org/) |
+| Lint / format | ruff, ruff-format, docformatter (pre-commit) |
 
 Requires Python 3.12+.
 
 ## Project Structure
 
 ```
-.
-├── main.py                    FastAPI app entrypoint (lifespan, middleware, router mounts)
-├── src/
-│   ├── api/
-│   │   ├── security/            JWT auth dependency (get_current_user) + /verify endpoint
-│   │   ├── users/
-│   │   │   ├── register/          create a user
-│   │   │   ├── login/              authenticate, issue access + refresh tokens
-│   │   │   ├── logout/             revoke the current access token and (optionally) a refresh session
-│   │   │   ├── refresh/            rotate a refresh token for a new access token
-│   │   │   ├── account/            get/rename/change email/change password + usage stats
-│   │   │   └── sessions/           list/revoke active refresh-token sessions
-│   │   └── v1/
-│   │       ├── agent/            chat + agent-settings endpoints (in-process LangGraph agent)
-│   │       ├── crawler/          crawl job CRUD, retry, filters, settings schema
-│   │       ├── dashboard/         aggregate stats for the UI
-│   │       ├── data/              extracted result items
-│   │       └── settings/          crawl setting templates + provider API keys
-│   ├── core/
-│   │   ├── config.py             pydantic-settings Settings (reads .env)
-│   │   ├── security.py           JWT + password hashing
-│   │   ├── sessions.py           refresh-session bookkeeping (record/revoke/revoke-all)
-│   │   └── pool.py               arq Redis connection pool
-│   ├── db/
-│   │   ├── models.py             SQLAlchemy ORM models (includes agent's conversations/chat_messages/agent_settings)
-│   │   └── pg.py                 async engine/session
-│   ├── worker/
-│   │   ├── settings.py           arq WorkerSettings
-│   │   ├── settings_builder.py   maps a CrawlJob's JSON payload to onecrawler Settings/FilterChain
-│   │   └── tasks.py              the actual crawl job (sitemap / link_extraction / crawler modes)
-│   └── agent/                  LangGraph agent engine, driven in-process by src/api/v1/agent
-│                                  (see docs/agent.md)
-├── alembic/                    migrations
-└── docs/
-    ├── agent.md                  LLM agent architecture, endpoints, config
-    └── apis.md                   full route index by area
+main.py            FastAPI entrypoint (lifespan, middleware, router mounts)
+src/
+├── api/
+│   ├── security/    JWT auth dependency + /verify
+│   ├── users/       register, login, logout, refresh, account, sessions
+│   └── v1/          agent (chat + settings), crawler, dashboard, data, settings
+├── core/            config, security, sessions, arq pool, logger
+├── db/              SQLAlchemy models + async engine/session
+├── worker/          arq WorkerSettings, settings_builder, crawl tasks
+└── agent/           deepharness agent engine (see docs/agent.md)
+alembic/             migrations
+docs/                agent.md (agent architecture), apis.md (route index)
+tests/               pytest + httpx.AsyncClient suites
 ```
 
 ## Getting Started
 
-### Prerequisites
-
-- Docker + Docker Compose (recommended), **or** Python 3.12+, PostgreSQL 16, and Redis 7 if running natively.
-
-### Quick start (Docker Compose)
+Requires Docker + Docker Compose, or Python 3.12+ with PostgreSQL 16 and Redis 7 natively.
 
 ```bash
 cp .env.example .env
-# edit .env — at minimum set a real JWT_SECRET_KEY before anything but local dev
-
+# at minimum, set a real JWT_SECRET_KEY before anything but local dev
 docker compose up --build
 ```
 
-This starts `postgres`, `redis`, `mlflow`, runs migrations (`migrate`), then starts `fastapi` (http://localhost:8000, including the LLM agent) and the `arq` worker. A default admin user is seeded on first boot from `DEFAULT_ADMIN_*` in `.env`.
+This starts `postgres`, `redis`, `mlflow`, runs migrations, then `fastapi` (http://localhost:8000) and the `arq` worker. A default admin is seeded on first boot from `DEFAULT_ADMIN_*`.
 
-### Local development (live reload)
-
-[`docker-compose.dev.yml`](docker-compose.dev.yml) bind-mounts the repo into the `fastapi`/`arq` containers and runs `uvicorn --reload`, so code edits apply without rebuilding:
+**Live reload** — [`docker-compose.dev.yml`](docker-compose.dev.yml) bind-mounts the repo and runs `uvicorn --reload`:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
-The `arq` worker doesn't hot-reload (job processes shouldn't restart mid-run) — restart it manually after worker-side changes:
+The `arq` worker deliberately doesn't hot-reload (job processes shouldn't restart mid-run) — use `docker compose restart arq`. The dev overlay also starts `ngrok` tunnelling `fastapi` to a public URL; set `NGROK_AUTHTOKEN` and check `http://localhost:4040`.
+
+**Without Docker:**
 
 ```bash
-docker compose restart arq
-```
-
-This dev overlay also starts an `ngrok` container that tunnels `fastapi` to a public URL — useful for testing webhooks or sharing a local build. Set `NGROK_AUTHTOKEN` in `.env` (get one from [dashboard.ngrok.com](https://dashboard.ngrok.com/get-started/your-authtoken)), then check the assigned URL at `http://localhost:4040`.
-
-### Running without Docker
-
-```bash
-python -m venv .venv && source .venv/bin/activate   # or .venv\Scripts\activate on Windows
-pip install -e .[worker]        # omit [worker] if you only need the API (agent deps are already core)
-playwright install chromium --with-deps   # only needed to actually run crawls
-
-cp .env.example .env   # point POSTGRES_HOST / REDIS_URL at your local services
+python -m venv .venv && source .venv/bin/activate
+pip install -e .[worker]                  # omit [worker] for API only
+playwright install chromium --with-deps   # only to actually run crawls
+cp .env.example .env                      # point POSTGRES_HOST / REDIS_URL at local services
 alembic upgrade head
 uvicorn main:app --reload
-# in another shell:
-arq src.worker.settings.WorkerSettings
+arq src.worker.settings.WorkerSettings    # in another shell
 ```
 
 ## Configuration
 
-All configuration is via environment variables (`.env`, loaded by `src/core/config.py`). See [`.env.example`](.env.example) for the full annotated list; the essentials:
+All config is environment variables (`.env`, loaded by `src/core/config.py`). See [`.env.example`](.env.example) for the annotated list; the essentials:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Postgres credentials | `onecrawler` |
-| `POSTGRES_HOST` / `POSTGRES_PORT` | Postgres connection (compose service name in Docker) | `postgres` / `5432` |
-| `REDIS_URL` | Redis connection for arq's job queue | `redis://redis:6379/0` |
-| `JWT_SECRET_KEY` | Signing key for access & refresh tokens — **change this outside local dev** | `dev-secret-change-me` |
-| `JWT_ALGORITHM` | JWT signing algorithm | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime | `60` |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token lifetime | `30` |
-| `DEFAULT_ADMIN_NAME` / `_EMAIL` / `_PASSWORD` | Seeded admin account (only created if no user with that email exists) | see `.env.example` |
+| `POSTGRES_USER` / `_PASSWORD` / `_DB` | Postgres credentials | `onecrawler` |
+| `POSTGRES_HOST` / `_PORT` | Postgres connection (compose service name in Docker) | `postgres` / `5432` |
+| `REDIS_URL` | Redis connection for arq's queue | `redis://redis:6379/0` |
+| `JWT_SECRET_KEY` | Token signing key — **change outside local dev** | `dev-secret-change-me` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` / `REFRESH_TOKEN_EXPIRE_DAYS` | Token lifetimes | `60` / `30` |
+| `DEFAULT_ADMIN_NAME` / `_EMAIL` / `_PASSWORD` | Seeded admin (only if that email has no user) | see `.env.example` |
 | `CORS_ORIGINS` | JSON array of allowed origins | `["http://localhost:5173"]` |
-| `LOG_LEVEL` | Root logging level (`DEBUG`/`INFO`/`WARNING`/`ERROR`) for the API and worker | `INFO` |
-| `POSTGRES_HOST_PORT` / `REDIS_HOST_PORT` / `API_HOST_PORT` / `MLFLOW_HOST_PORT` | Host-side port overrides for docker-compose | commented out |
-| `NGROK_AUTHTOKEN` | Dev-only: public tunnel token for `docker-compose.dev.yml`'s `ngrok` service | unset |
+| `LOG_LEVEL` | Root logging level for API and worker | `INFO` |
+| `*_HOST_PORT` | Host-side port overrides for compose | commented out |
+| `NGROK_AUTHTOKEN` | Dev-only tunnel token | unset |
 
-See [docs/agent.md](docs/agent.md#configuration) for the LLM agent's `MLFLOW_*` / `AGENT_API_BASE_URL` variables — it shares this same `src/core/config.py`, no separate config file.
+Agent-specific `MLFLOW_*` / `AGENT_API_BASE_URL` are documented in [docs/agent.md](docs/agent.md#configuration) — same `src/core/config.py`, no separate file.
 
-Generate a real `JWT_SECRET_KEY` with:
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(64))"
-```
+Generate a real key with `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
 
 ## Logging
 
-`src/core/logger.py` configures the root logger (via `get_logger()`, called on startup by both `main.py` and `src/worker/settings.py`) with two handlers:
-
-- A rotating file handler at `logs/app.log`, capped at 20MB with 3 backups.
-- A console handler (visible via `docker compose logs`).
-
-The level is controlled by `LOG_LEVEL`. Note `logs/` isn't a mounted volume, so file logs are lost if a container is recreated (not just restarted) — use `docker compose logs` for anything you need to survive that.
+`src/core/logger.py` configures the root logger with a rotating file handler at `logs/app.log` (20MB, 3 backups) and a console handler, at `LOG_LEVEL`. `logs/` isn't a mounted volume, so file logs are lost when a container is recreated — use `docker compose logs` for anything that must survive that.
 
 ## Database Migrations
 
-Standard Alembic workflow:
-
 ```bash
-alembic upgrade head                 # apply all migrations
-alembic revision -m "description"    # create a new empty migration
-alembic downgrade -1                 # roll back one revision
+alembic upgrade head                 # apply all
+alembic revision -m "description"    # new empty migration
+alembic downgrade -1                 # roll back one
 ```
 
-Migrations live in [`alembic/versions/`](alembic/versions/) and run automatically via the `migrate` service in `docker-compose.yml` before the API/worker start.
+Migrations live in [`alembic/versions/`](alembic/versions/) and run automatically via the `migrate` service.
 
 ## Authentication
 
-Auth is JWT Bearer tokens (`Authorization: Bearer <token>`) with a short-lived **access token** plus a longer-lived **refresh token**, issued together by `POST /api/users/login`:
+JWT Bearer tokens (`Authorization: Bearer <token>`): a short-lived **access token** plus a longer-lived **refresh token**, issued together by `POST /api/users/login`.
 
-- **Access tokens** are validated by `HTTPBearer` (`src/api/security/dependencies.py`), expire after `ACCESS_TOKEN_EXPIRE_MINUTES`, and are individually revocable via a Redis blocklist keyed by the token's `jti` (used by logout).
-- **Refresh tokens** exchange for a new access/refresh pair at `POST /api/users/refresh`. Each issued refresh token is tracked as a row in the `refresh_sessions` table (`src/core/sessions.py`), which is what makes per-session listing and revocation possible — `GET /api/users/me/sessions` lists active sessions, `DELETE /api/users/me/sessions/{id}` revokes one, and `POST /api/users/me/sessions/revoke-all` revokes all of them (also triggered automatically on password change).
-- Refreshing **rotates** the token: the used refresh token is revoked and a new one issued, so a stolen refresh token stops working the next time the real owner refreshes.
+- Access tokens expire after `ACCESS_TOKEN_EXPIRE_MINUTES` and are individually revocable via a Redis blocklist keyed on the token's `jti` (how logout works).
+- Refresh tokens exchange for a new pair at `POST /api/users/refresh`. Each is a row in `refresh_sessions`, which is what makes per-session listing and revocation possible under `/api/users/me/sessions`.
+- Refreshing **rotates** the token — the used one is revoked, so a stolen refresh token stops working the next time the real owner refreshes. Changing a password revokes every session.
 
-**In Swagger (`/docs`):**
-1. Call `POST /api/users/login` with your email/password (the seeded admin credentials are in `.env`).
-2. Copy `accessToken` from the response.
-3. Click **Authorize**, paste the raw token (no `Bearer ` prefix needed — Swagger adds it), and confirm.
+In Swagger (`/docs`): call `POST /api/users/login`, copy `accessToken`, click **Authorize**, and paste the raw token (no `Bearer ` prefix).
 
 ## API Reference
 
-Full interactive docs (with request/response schemas and a "Try it out" console) are served at `/docs` (Swagger UI) and `/redoc`; the raw OpenAPI spec is at `/openapi.json`. See [docs/apis.md](docs/apis.md) for a route index grouped by area (users/auth, crawls, dashboard/data, settings, agent).
+Interactive docs at `/docs` (Swagger UI) and `/redoc`; raw spec at `/openapi.json`. [docs/apis.md](docs/apis.md) has a route index grouped by area.
 
 ## Crawl Modes, Strategies & Filters
 
-A crawl job (`POST /api/v1/crawls`) picks one **mode**:
+A crawl job (`POST /api/v1/crawls`) picks one **mode**: `sitemap` (discover URLs from the sitemap), `link_extraction` (follow links `shallow` or `deep`), or `crawler` (full crawl + extraction, streaming `CrawlResultItem` rows).
 
-- `sitemap` — discovers URLs from a site's sitemap.
-- `link_extraction` — follows links (`shallow` or `deep`) from the target URL.
-- `crawler` — full crawl + content extraction, streaming results as `CrawlResultItem` rows.
+For `crawler` mode, `scraping_strategy` decides how page content becomes structured data:
 
-For `crawler` mode, `scraping_strategy` controls how page content is turned into structured data:
+- `heuristic` — fixed fields (title, text, metadata) via `onecrawler`'s parser. Article-biased; can return little on non-article pages.
+- `genai` — an LLM extracts fields matching a caller-defined `output_schema`.
+- `markdownify` — whole-page HTML-to-Markdown; no extraction or metadata, but never empty for a rendered page. Good for e-commerce, dashboards, and docs where `heuristic` falls short.
 
-- `heuristic` — fixed extraction fields (title, text, metadata) via `onecrawler`'s built-in parser. Article/news-biased; can return little or nothing on non-article pages.
-- `genai` — an LLM extracts fields matching a caller-defined `output_schema` (arbitrary field names/types).
-- `markdownify` — faithful whole-page HTML-to-Markdown conversion; no content extraction or metadata, but never returns empty for a rendered page. Useful for non-article pages (e-commerce, dashboards, docs) where `heuristic` falls short.
+Because these produce differently-shaped output, `CrawlResultItem.content` is `JSONB` rather than fixed columns.
 
-Because these strategies produce differently-shaped output, `CrawlResultItem.content` is stored as `JSONB` rather than a fixed set of columns.
+Optional `filters` (AND/OR trees of `FilterNodeIn`) narrow which discovered pages get scraped: `by_date` (`YYYY-MM-DD`), `by_keywords`, `by_files`, `by_extension`, `by_cosine_similarity`.
 
-Optional `filters` (AND/OR trees of `FilterNodeIn` nodes) narrow which discovered pages get scraped: `by_date` (validated as `YYYY-MM-DD`), `by_keywords`, `by_files`, `by_extension`, `by_cosine_similarity`.
-
-## Development
-
-Pre-commit runs ruff (lint + import sorting + `X | None` typing), ruff-format, and docformatter (docstring wrapping):
+## Development & Testing
 
 ```bash
-pip install pre-commit
-pre-commit install
-pre-commit run --all-files
+pip install pre-commit && pre-commit install
+pre-commit run --all-files   # ruff, ruff-format, docformatter
+pytest                       # suites in tests/
 ```
 
-Follow [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) for code style conventions used throughout this repo.
-
-## Testing
-
-There is no automated test suite yet. Verify changes by exercising the running API — via Swagger (`/docs`), `curl`, or by tailing the worker's logs (`docker compose logs -f arq`) while a crawl job runs. When adding tests, prefer `pytest` + `httpx.AsyncClient` against the FastAPI app, and a real (containerized) Postgres/Redis over mocks.
+Tests use `pytest-asyncio` + `httpx.AsyncClient` against the FastAPI app. Note `src/db/pg.py` builds one engine at import time, so the suite pins a session-scoped event loop (see `[tool.pytest.ini_options]` in `pyproject.toml`). Follow [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) for style conventions.
 
 ## Deployment Notes
 
-- The `api` and `worker` images are independent (see [Dockerfile](Dockerfile) targets) — deploy/scale them separately; only `worker` needs Playwright/Chromium. `api` includes the LangGraph/deepagents/mlflow deps for the in-process agent.
-- Run `alembic upgrade head` before starting new API/worker versions (the `migrate` service in `docker-compose.yml` models this as a one-off job that `fastapi`/`arq` wait on via `service_completed_successfully`).
-- Set a real `JWT_SECRET_KEY` and rotate the seeded default admin password before exposing this beyond local dev.
-- `CORS_ORIGINS` must list your actual frontend origin(s) in production.
-- `refresh_sessions` rows are never deleted, only marked `revoked_at` — there's no cleanup job yet, so the table grows unbounded with login volume. Fine at small scale; add a periodic prune of expired/revoked rows before this matters.
+- The `api` and `worker` images are independent — deploy and scale separately; only `worker` needs Playwright/Chromium.
+- Run `alembic upgrade head` before starting new versions (the `migrate` service models this as a one-off job that `fastapi`/`arq` wait on via `service_completed_successfully`).
+- Set a real `JWT_SECRET_KEY`, rotate the seeded admin password, and list your actual frontend origins in `CORS_ORIGINS`.
+- `refresh_sessions` rows are never deleted, only marked `revoked_at` — no cleanup job yet, so the table grows with login volume. Fine at small scale; add a periodic prune before it matters.
 
 ## Troubleshooting
 
-- **`alembic upgrade head` fails on a running container**: if you're iterating on a migration, copy the updated file into the container (`docker cp`) or rebuild the image — code isn't hot-reloaded unless you're using `docker-compose.dev.yml`'s bind mount.
-- **Windows line endings**: the repo is LF-based; Git will warn about CRLF conversion on Windows checkouts — this is expected and harmless.
-- **A crawl job fails immediately with a date-parsing error**: `filters` nodes of kind `by_date` require `start`/`end` in `YYYY-MM-DD` format; anything else is rejected at request time with a `422`.
-- **`401 Invalid or expired refresh token` right after a password change**: expected — changing your password revokes every refresh session, including the one the client is holding. Log in again.
+- **`alembic upgrade head` fails in a running container**: code isn't hot-reloaded unless you're on the dev bind mount — `docker cp` the migration in, or rebuild.
+- **Windows line endings**: the repo is LF-based; Git's CRLF warning on Windows checkouts is expected.
+- **A crawl fails immediately with a date-parsing error**: `by_date` filters need `start`/`end` as `YYYY-MM-DD`; anything else is a `422` at request time.
+- **`401 Invalid or expired refresh token` right after a password change**: expected — that revokes every refresh session, including the client's. Log in again.
+
+## License
+
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE) — Copyright (c) 2026 Sayed Shaun.
+
+Use, modification, and distribution are permitted for **noncommercial purposes only**. Any commercial use requires a separate license from the copyright holder. See [LICENSE](LICENSE) for the full terms.
