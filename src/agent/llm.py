@@ -1,40 +1,27 @@
-from langchain.chat_models import init_chat_model
-from langchain_openai import ChatOpenAI
+from deepharness import Anthropic, Gemini, OpenAI, OpenRouter
+from deepharness.providers.base import LLM
 
-_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
-_PROVIDER_TO_LANGCHAIN = {
-    "openai": "openai",
-    "anthropic": "anthropic",
-    "google": "google_genai",
-}
+_PROVIDERS = ("openai", "anthropic", "google", "openrouter")
 
 
-def build_chat_model(provider: str, model: str, api_key: str):
+def build_chat_model(provider: str, model: str, api_key: str) -> LLM:
     """provider/model/api_key must already be resolved — this service has no
     shared fallback brain; every call is backed by a user's own saved LLM
-    settings (PUT /api/settings/agent)."""
-    if provider == "openrouter":
-        return ChatOpenAI(
-            model=model,
-            api_key=api_key,
-            base_url=_OPENROUTER_BASE_URL,
-            temperature=0,
-            # Some models default to a very high max output (e.g. 65535 for
-            # gemini-2.5-flash), which free-tier OpenRouter credit balances
-            # can't cover — cap it so requests fit a typical free balance.
-            max_tokens=3000,
-        )
+    settings (PUT /api/settings/agent).
 
-    if provider not in _PROVIDER_TO_LANGCHAIN:
-        raise ValueError(
-            f"Unsupported provider {provider!r}; expected one of "
-            f"{sorted([*_PROVIDER_TO_LANGCHAIN, 'openrouter'])}"
-        )
-
-    return init_chat_model(
-        model,
-        model_provider=_PROVIDER_TO_LANGCHAIN[provider],
-        api_key=api_key,
-        temperature=0,
+    Note: deepharness's OpenAI-compatible payload has no max_tokens field, so the
+    3000-token output cap the LangChain OpenRouter client used to carry (to keep
+    requests inside a free-tier credit balance) can't be expressed here.
+    """
+    match provider:
+        case "openai":
+            return OpenAI(model, api_key=api_key, temperature=0)
+        case "openrouter":
+            return OpenRouter(model, api_key=api_key, temperature=0)
+        case "anthropic":
+            return Anthropic(model, api_key=api_key)
+        case "google":
+            return Gemini(model, api_key=api_key)
+    raise ValueError(
+        f"Unsupported provider {provider!r}; expected one of {sorted(_PROVIDERS)}"
     )
