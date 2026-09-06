@@ -1,35 +1,55 @@
+import asyncio
 import json
 
-from langchain_core.messages import AIMessage, ToolMessage
+from deepharness import Message
 
-from .schema import ChatRequest
+from src.agent.tools import AgentDeps
+from src.db.models import ChatMessage
 
 
-def agent_config(payload: ChatRequest, token: str, search_api_key: str | None) -> dict:
-    return {
-        "configurable": {
-            "thread_id": payload.conversation_id,
-            "auth_token": token,
-            "search_api_key": search_api_key,
+def agent_deps(
+    token: str, search_api_key: str | None, events: asyncio.Queue | None = None
+) -> AgentDeps:
+    return AgentDeps(auth_token=token, search_api_key=search_api_key, events=events)
+
+
+def history_messages(rows: list[ChatMessage], message: str) -> list[Message]:
+    """The transcript to run: this conversation's stored turns, then the new message.
+
+    deepharness has no server-side checkpointer, so prior context is replayed from the
+    ChatMessage rows /chat writes. Only the human/ai text survives that round-trip —
+    the tool calls and results of earlier turns are not stored, so the model sees what
+    it said, not how it got there.
+    """
+    messages = [
+        Message.ai(row.content) if row.role == "ai" else Message.human(row.content)
+        for row in rows
+    ]
+    messages.append(Message.human(message))
+    return messages
+
+
+def serialize_event(event: dict) -> dict:
+    """One EventToolbox event as the message shape /chat/stream has always emitted.
+
+    Tool call ids aren't visible at the toolbox boundary, so they come out None where
+    the LangGraph stream used to carry the provider's id.
+    """
+    if event["kind"] == "tool_call":
+        return {
+            "kind": "AIMessage",
+            "content": "",
+            "tool_calls": [{"name": event["name"], "args": event["args"], "id": None}],
         }
+
+    content = (
+        event["error"]
+        if event["kind"] == "tool_error"
+        else json.dumps(event["result"], default=str)
+    )
+    return {
+        "kind": "ToolMessage",
+        "content": content,
+        "name": event["name"],
+        "tool_call_id": None,
     }
-
-
-def serialize_message(message) -> dict:
-    content = message.content
-    if not isinstance(content, str):
-        content = json.dumps(content, default=str)
-
-    data = {"kind": message.__class__.__name__, "content": content}
-
-    if isinstance(message, AIMessage) and message.tool_calls:
-        data["tool_calls"] = [
-            {"name": tc["name"], "args": tc["args"], "id": tc["id"]}
-            for tc in message.tool_calls
-        ]
-
-    if isinstance(message, ToolMessage):
-        data["tool_call_id"] = message.tool_call_id
-        data["name"] = getattr(message, "name", None)
-
-    return data
