@@ -10,7 +10,7 @@ Keep them in sync with `buildSettingsPayload` in onecrawler-ui/src/lib/api-mappe
 """
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from src.api.v1.crawler.schema import (
     BrowserSettingsIn,
@@ -126,3 +126,38 @@ def test_scraping_output_format_defaults_to_json() -> None:
         {"browser_settings": {"viewport": {"width": 1280, "height": 800}}}
     )
     assert settings.scraping_output_format == "json"
+
+
+@pytest.mark.parametrize(
+    ("sent", "stored"),
+    [
+        ("prothomalo.com", "https://prothomalo.com"),
+        ("  example.com/blog  ", "https://example.com/blog"),
+        ("http://example.com", "http://example.com"),
+        ("https://example.com", "https://example.com"),
+    ],
+)
+def test_target_url_gets_a_scheme(sent: str, stored: str) -> None:
+    """Playwright can't navigate a schemeless URL — one is normalized on the way in."""
+    request = CreateCrawlRequest.model_validate(
+        {
+            "target_url": sent,
+            "mode": "crawler",
+            "settings": {"browser_settings": {"viewport": {"width": 1, "height": 1}}},
+        }
+    )
+    assert request.target_url == stored
+
+
+@pytest.mark.parametrize("sent", ["", "   ", "ftp://example.com", "https://"])
+def test_unusable_target_url_is_rejected(sent: str) -> None:
+    with pytest.raises(ValidationError):
+        CreateCrawlRequest.model_validate(
+            {
+                "target_url": sent,
+                "mode": "crawler",
+                "settings": {
+                    "browser_settings": {"viewport": {"width": 1, "height": 1}}
+                },
+            }
+        )

@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
@@ -273,6 +274,23 @@ class CreateCrawlRequest(InSchema):
     mode: CrawlMode
     settings: CrawlSettingsIn
     filters: FilterGroupIn | None = None
+
+    @field_validator("target_url")
+    @classmethod
+    def _normalize_target_url(cls, value: str) -> str:
+        """Playwright can't navigate a schemeless URL — it fails with "Cannot navigate
+        to invalid URL" and the job scrapes nothing — so a bare host like
+        "example.com" (which the agent and hand-written requests both produce) gets
+        https:// prepended here, once, for every caller."""
+        url = value.strip()
+        if "://" not in url:
+            url = f"https://{url}"
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError(
+                "target_url must be an http(s) URL, e.g. https://example.com"
+            )
+        return url
 
 
 class ScrapeFromDiscoveredRequest(InSchema):
