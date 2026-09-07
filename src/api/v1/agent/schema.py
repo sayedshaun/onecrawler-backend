@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChatRequest(BaseModel):
@@ -10,9 +10,10 @@ class ChatRequest(BaseModel):
     provider: str | None = Field(
         None,
         description="Override your saved LLM provider (openai, anthropic, google, "
-        "openrouter) for this call only — doesn't change your saved settings. Only "
-        "takes effect if it matches your saved provider's key (there's no shared "
-        "fallback key — see PUT /api/v1/settings/agent).",
+        "openrouter, openai_compatible) for this call only — doesn't change your "
+        "saved settings. Only takes effect if it matches your saved provider's key "
+        "and base_url (there's no shared fallback key — see "
+        "PUT /api/v1/settings/agent).",
     )
     model: str | None = Field(
         None, description="Override the model name for this call only."
@@ -41,9 +42,39 @@ class ConversationDetailOut(ConversationOut):
 
 
 class LLMConfigIn(BaseModel):
-    provider: str = Field(..., description="openai, anthropic, google, or openrouter.")
-    model: str = Field(..., description="Model name for that provider.")
-    api_key: str = Field(..., description="Your own API key for that provider.")
+    provider: str = Field(
+        ...,
+        description="openai, anthropic, google, openrouter, or openai_compatible "
+        "for a self-hosted OpenAI-compatible server (llama.cpp, vLLM, LM Studio).",
+    )
+    model: str = Field(
+        "",
+        description="Model name for that provider. Optional (and usually ignored) "
+        "for openai_compatible, which serves whatever model it was started with.",
+    )
+    api_key: str | None = Field(
+        None,
+        description="Your own API key for that provider. Required except for "
+        "openai_compatible, which usually needs none.",
+    )
+    base_url: str | None = Field(
+        None,
+        description="Endpoint of your OpenAI-compatible server, e.g. "
+        "http://localhost:8080/v1. Required for openai_compatible, ignored "
+        "otherwise.",
+    )
+
+    @model_validator(mode="after")
+    def _check_provider_requirements(self) -> "LLMConfigIn":
+        if self.provider == "openai_compatible":
+            if not self.base_url:
+                raise ValueError("base_url is required for openai_compatible.")
+            return self
+        if not self.model:
+            raise ValueError(f"model is required for provider {self.provider!r}.")
+        if not self.api_key:
+            raise ValueError(f"api_key is required for provider {self.provider!r}.")
+        return self
 
 
 class SearchConfigIn(BaseModel):
@@ -64,6 +95,7 @@ class LLMConfigOut(BaseModel):
     provider: str | None = None
     model: str | None = None
     has_key: bool = False
+    base_url: str | None = None
 
 
 class SearchConfigOut(BaseModel):

@@ -9,7 +9,7 @@ the `fastapi` container; there is no separate agent service or port.
 ```
 src/api/v1/agent/    chat + agent-settings endpoints (FastAPI layer)
 src/agent/           the agent engine
-  executor.py           builds/caches an Agent per (provider, model, api_key)
+  executor.py           builds/caches an Agent per (provider, model, api_key, base_url)
   tools.py              one tool per OneCrawler REST endpoint, plus web_search;
                         AgentDeps (per-request scope) and EventToolbox (stream events)
   llm.py                provider -> deepharness provider
@@ -51,6 +51,15 @@ src/agent/           the agent engine
 fallback LLM key; every call is backed by the calling user's own saved `llm.provider` /
 `llm.model` / `llm.api_key`. `search` (a Tavily key) is optional and only needed for the
 `web_search` tool.
+
+`llm.provider` is `openai`, `anthropic`, `google`, `openrouter`, or `openai_compatible`
+for a self-hosted OpenAI-compatible server (llama.cpp, vLLM, LM Studio, Ollama). That
+last one takes an `llm.base_url` instead of a key, and `llm.model` is optional since such
+a server serves whatever model it was started with:
+
+```json
+{"llm": {"provider": "openai_compatible", "base_url": "http://localhost:8080/v1"}}
+```
 
 ## Configuration
 

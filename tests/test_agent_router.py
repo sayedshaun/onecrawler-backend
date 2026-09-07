@@ -26,7 +26,12 @@ async def test_agent_settings_roundtrip_never_leaks_api_key(
     )
     assert put_response.status_code == 200
     body = put_response.json()
-    assert body["llm"] == {"provider": "openai", "model": "gpt-4o", "has_key": True}
+    assert body["llm"] == {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "has_key": True,
+        "base_url": None,
+    }
     assert "sk-secret" not in put_response.text
 
     get_response = await client.get("/api/v1/settings/agent")
@@ -39,7 +44,7 @@ async def test_get_agent_settings_defaults_when_unset(client: AsyncClient) -> No
     response = await client.get("/api/v1/settings/agent")
     assert response.status_code == 200
     assert response.json() == {
-        "llm": {"provider": None, "model": None, "has_key": False},
+        "llm": {"provider": None, "model": None, "has_key": False, "base_url": None},
         "search": {"provider": None, "has_key": False},
         "updated_at": None,
     }
@@ -63,7 +68,12 @@ async def test_clear_agent_settings_scope_llm_keeps_search(
 
     get_response = await client.get("/api/v1/settings/agent")
     body = get_response.json()
-    assert body["llm"] == {"provider": None, "model": None, "has_key": False}
+    assert body["llm"] == {
+        "provider": None,
+        "model": None,
+        "has_key": False,
+        "base_url": None,
+    }
     assert body["search"] == {"provider": "tavily", "has_key": True}
 
 
@@ -129,8 +139,8 @@ async def test_chat_reuses_provider_from_saved_settings(
 
     seen: dict = {}
 
-    def fake_get_agent(provider: str, model: str, api_key: str):
-        seen.update(provider=provider, model=model, api_key=api_key)
+    def fake_get_agent(provider: str, model: str, api_key: str, base_url=None):
+        seen.update(provider=provider, model=model, api_key=api_key, base_url=base_url)
         return _fake_agent("ok")
 
     monkeypatch.setattr("src.api.v1.agent.router.get_agent", fake_get_agent)
@@ -140,7 +150,12 @@ async def test_chat_reuses_provider_from_saved_settings(
         json={"message": "hi", "conversation_id": "conv-2"},
     )
     assert response.status_code == 200
-    assert seen == {"provider": "anthropic", "model": "claude", "api_key": "sk-2"}
+    assert seen == {
+        "provider": "anthropic",
+        "model": "claude",
+        "api_key": "sk-2",
+        "base_url": None,
+    }
 
 
 async def test_another_user_cannot_read_first_users_conversation(
@@ -283,3 +298,80 @@ async def test_chat_stream_emits_tokens_tool_events_and_records_the_answer(
 
     detail = await client.get("/api/v1/chats/conv-stream")
     assert detail.json()["messages"][1]["content"] == "job j1 is done"
+
+
+async def test_openai_compatible_settings_need_no_key_or_model(
+    client: AsyncClient,
+) -> None:
+    response = await client.put(
+        "/api/v1/settings/agent",
+        json={
+            "llm": {
+                "provider": "openai_compatible",
+                "base_url": "http://localhost:8080/v1",
+            }
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["llm"] == {
+        "provider": "openai_compatible",
+        "model": "",
+        "has_key": False,
+        "base_url": "http://localhost:8080/v1",
+    }
+
+
+async def test_openai_compatible_settings_require_base_url(
+    client: AsyncClient,
+) -> None:
+    response = await client.put(
+        "/api/v1/settings/agent",
+        json={"llm": {"provider": "openai_compatible", "model": "qwen3"}},
+    )
+    assert response.status_code == 422
+
+
+async def test_chat_with_openai_compatible_passes_base_url_and_default_model(
+    client: AsyncClient, monkeypatch
+) -> None:
+    await client.put(
+        "/api/v1/settings/agent",
+        json={
+            "llm": {
+                "provider": "openai_compatible",
+                "base_url": "http://localhost:8080/v1",
+            }
+        },
+    )
+
+    seen: dict = {}
+
+    def fake_get_agent(provider: str, model: str, api_key: str, base_url=None):
+        seen.update(provider=provider, model=model, api_key=api_key, base_url=base_url)
+        return _fake_agent("ok")
+
+    monkeypatch.setattr("src.api.v1.agent.router.get_agent", fake_get_agent)
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "hi", "conversation_id": "conv-local"},
+    )
+    assert response.status_code == 200
+    assert seen == {
+        "provider": "openai_compatible",
+        "model": "local-model",
+        "api_key": None,
+        "base_url": "http://localhost:8080/v1",
+    }
+
+
+def test_key_less_openai_compatible_sends_a_usable_auth_header() -> None:
+    """httpx rejects the "Bearer " an empty key would produce, so a key-less
+    self-hosted server must still get a non-empty placeholder token."""
+    from src.agent.llm import build_chat_model
+
+    model = build_chat_model(
+        "openai_compatible", "", None, "https://llm.example.com/v1"
+    )
+    headers = model._http._async_client.headers
+    assert headers["authorization"].strip() != "Bearer"

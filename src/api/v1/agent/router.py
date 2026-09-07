@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agent.executor import get_agent
+from src.agent.llm import DEFAULT_LOCAL_MODEL
 from src.agent.tracing import agent_run
 from src.api.security.dependencies import (
     CurrentUser,
@@ -41,15 +42,18 @@ _TITLE_MAX_LEN = 60
 
 async def _resolve_agent_settings(
     payload: ChatRequest, current_user: CurrentUser, db: AsyncSession
-) -> tuple[str, str, str, str | None]:
-    """Resolve (llm_provider, llm_model, llm_api_key, search_api_key) for this call.
+) -> tuple[str, str, str | None, str | None, str | None]:
+    """Resolve (llm_provider, llm_model, llm_api_key, llm_base_url, search_api_key) for
+    this call.
 
     llm is required — saved per-user settings (PUT /api/v1/settings/agent) are the only
     source, there's no shared fallback brain. A per-request provider/model override only
-    reuses the saved api_key when it doesn't change the provider (a saved OpenAI key
-    can't drive an Anthropic model); switching provider requires saved settings for that
-    provider already. search_api_key is optional — it's None until the user saves one,
-    and web_search just isn't available until then.
+    reuses the saved api_key and base_url when it doesn't change the provider (a saved
+    OpenAI key can't drive an Anthropic model); switching provider requires saved
+    settings for that provider already. openai_compatible is the one provider needing
+    no api_key — a self-hosted llama.cpp/vLLM server is reached by base_url instead.
+    search_api_key is optional — it's None until the user saves one, and web_search
+    just isn't available until then.
     """
     result = await db.execute(
         select(AgentSettings).where(AgentSettings.user_id == current_user.id)
@@ -58,9 +62,17 @@ async def _resolve_agent_settings(
 
     provider = payload.provider or (stored.llm_provider if stored else None)
     model = payload.model or (stored.llm_model if stored else None)
-    api_key = stored.llm_api_key if stored and stored.llm_provider == provider else None
+    same_provider = bool(stored) and stored.llm_provider == provider
+    api_key = stored.llm_api_key if same_provider else None
+    base_url = stored.llm_base_url if same_provider else None
 
-    if not provider or not model or not api_key:
+    if provider == "openai_compatible":
+        configured = bool(base_url)
+        model = model or DEFAULT_LOCAL_MODEL
+    else:
+        configured = bool(provider and model and api_key)
+
+    if not configured:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No LLM settings configured for your account. Call "
@@ -70,7 +82,7 @@ async def _resolve_agent_settings(
         )
 
     search_api_key = stored.search_api_key if stored else None
-    return provider, model, api_key, search_api_key
+    return provider, model, api_key, base_url, search_api_key
 
 
 async def _record_turn(
@@ -182,14 +194,14 @@ async def chat(
     current_user: CurrentUser = Depends(get_current_user),
     token: str = Depends(get_bearer_token),
 ) -> ChatResponse:
-    provider, model, api_key, search_api_key = await _resolve_agent_settings(
+    provider, model, api_key, base_url, search_api_key = await _resolve_agent_settings(
         payload, current_user, db
     )
     messages = history_messages(
         await _conversation_history(db, payload.conversation_id), payload.message
     )
 
-    agent = get_agent(provider, model, api_key)
+    agent = get_agent(provider, model, api_key, base_url)
     try:
         with agent_run(payload.conversation_id, payload.message) as span:
             state = await agent.arun(
@@ -241,13 +253,13 @@ async def chat_stream(
     activity from inside the dispatch that happens between them. Agent/tool errors
     surface as an "error" SSE event rather than raising.
     """
-    provider, model, api_key, search_api_key = await _resolve_agent_settings(
+    provider, model, api_key, base_url, search_api_key = await _resolve_agent_settings(
         payload, current_user, db
     )
     messages = history_messages(
         await _conversation_history(db, payload.conversation_id), payload.message
     )
-    agent = get_agent(provider, model, api_key)
+    agent = get_agent(provider, model, api_key, base_url)
 
     async def event_generator():
         queue: asyncio.Queue = asyncio.Queue()
@@ -325,6 +337,7 @@ def _settings_to_out(row: AgentSettings | None) -> AgentSettingsOut:
             provider=row.llm_provider,
             model=row.llm_model,
             has_key=row.llm_api_key is not None,
+            base_url=row.llm_base_url,
         ),
         search=SearchConfigOut(
             provider=row.search_provider,
@@ -357,6 +370,7 @@ async def set_agent_settings(
         update["llm_provider"] = payload.llm.provider
         update["llm_model"] = payload.llm.model
         update["llm_api_key"] = payload.llm.api_key
+        update["llm_base_url"] = payload.llm.base_url
     if payload.search is not None:
         update["search_provider"] = payload.search.provider
         update["search_api_key"] = payload.search.api_key
@@ -411,7 +425,8 @@ async def clear_agent_settings(
     if scope is None:
         await db.delete(row)
     elif scope == "llm":
-        row.llm_provider = row.llm_model = row.llm_api_key = None
+        row.llm_provider = row.llm_model = None
+        row.llm_api_key = row.llm_base_url = None
     else:
         row.search_provider = row.search_api_key = None
     await db.commit()
