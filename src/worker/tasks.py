@@ -97,10 +97,23 @@ async def run_crawl_job(ctx, job_id: str) -> None:
             else:
                 raise ValueError(f"Unknown crawl mode: {job.mode}")
 
-            job.status = CrawlStatus.CANCELLED if cancelled else CrawlStatus.COMPLETED
+            if cancelled:
+                job.status = CrawlStatus.CANCELLED
+            elif job.urls_discovered == 0:
+                # Every mode records a DiscoveredUrl per page it reaches, so a run that
+                # found none never loaded the target at all (an unreachable host, a
+                # page that failed to render). Reporting that as "completed" hides the
+                # failure behind an empty result set.
+                job.status = CrawlStatus.FAILED
+                job.error = f"No pages could be loaded from {job.target_url}"
+            else:
+                job.status = CrawlStatus.COMPLETED
             job.finished_at = now_ms()
             await db.commit()
-            await log(db, job_id, "info", f"Job {job.status}")
+            if job.error:
+                await log(db, job_id, "error", job.error)
+            else:
+                await log(db, job_id, "info", f"Job {job.status}")
 
         except Exception as exc:
             job.status = CrawlStatus.FAILED
