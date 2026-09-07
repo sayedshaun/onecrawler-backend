@@ -20,24 +20,14 @@ dependencies = [
     "argon2-cffi>=23.1.0",
     "email-validator>=2.2.0",
     "httpx>=0.27.0",
-    "langgraph>=1.0.0",
-    "langgraph-checkpoint-postgres>=3.0.0",
-    "psycopg[binary,pool]>=3.2.0",
-    "langchain>=1.0.0",
-    "langchain-openai>=1.0.0",
-    "langchain-anthropic>=1.0.0",
-    "langchain-google-genai>=2.0.0",
-    "deepagents>=0.6.0",
-    "mlflow==3.14.0",
+    "deepharness>=0.2.0",
+    "mlflow-skinny==3.14.0",
 ]
 
 [project.optional-dependencies]
-worker = ["onecrawler @ git+https://github.com/sayedshaun/onecrawler.git"]
+worker = ["onecrawler>=0.1.9"]
 dev = [
     "pytest>=8.3.0",
-    # 0.26 is the first release with asyncio_default_test_loop_scope, which the suite
-    # needs: src.db.pg builds one engine at import time, so its pooled connections must
-    # stay on a single loop for the whole session.
     "pytest-asyncio>=0.26.0",
 ]
 

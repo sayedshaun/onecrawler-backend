@@ -1,13 +1,55 @@
+import asyncio
+from dataclasses import dataclass, field
+from typing import Any
+
 import httpx
-from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
+from deepharness import Ctx, Toolbox, tool
 
 from .core.client import OneCrawlerClient
 
 
-def _client(config: RunnableConfig) -> OneCrawlerClient:
-    token = config["configurable"]["auth_token"]
-    return OneCrawlerClient(token=token)
+@dataclass(slots=True)
+class AgentDeps:
+    """Per-request scope handed to Agent.arun(deps=...) and reachable from any tool
+    as ctx.deps — the deepharness equivalent of what used to ride in a RunnableConfig's
+    "configurable" dict.
+
+    events, when set, is drained by /chat/stream so tool activity can be shown live;
+    it stays None for the non-streaming /chat endpoint.
+    """
+
+    auth_token: str
+    search_api_key: str | None = None
+    events: asyncio.Queue | None = field(default=None, compare=False)
+
+
+class EventToolbox(Toolbox):
+    """Toolbox that reports each call and its outcome to ctx.deps.events.
+
+    deepharness streams text deltas only, so without this a streaming client would
+    see nothing while tools run. Emitting from the toolbox keeps every tool free of
+    streaming concerns.
+    """
+
+    __slots__ = ()
+
+    async def call(self, name: str, *, ctx: Ctx | None = None, **kwargs: Any) -> Any:
+        queue = getattr(getattr(ctx, "deps", None), "events", None)
+        if queue is None:
+            return await super().call(name, ctx=ctx, **kwargs)
+
+        await queue.put({"kind": "tool_call", "name": name, "args": kwargs})
+        try:
+            result = await super().call(name, ctx=ctx, **kwargs)
+        except Exception as exc:
+            await queue.put({"kind": "tool_error", "name": name, "error": str(exc)})
+            raise
+        await queue.put({"kind": "tool_result", "name": name, "result": result})
+        return result
+
+
+def _client(ctx: Ctx) -> OneCrawlerClient:
+    return OneCrawlerClient(token=ctx.deps.auth_token)
 
 
 def _crawl_settings(
@@ -38,6 +80,7 @@ def _crawl_settings(
 
 @tool
 async def create_crawl(
+    ctx: Ctx,
     target_url: str,
     mode: str = "crawler",
     max_pages: int | None = None,
@@ -46,7 +89,6 @@ async def create_crawl(
     include_link_patterns: list[str] | None = None,
     exclude_link_patterns: list[str] | None = None,
     enable_human_behaviors: bool | None = None,
-    config: RunnableConfig = None,
 ) -> dict:
     """Start a new crawl job against a URL.
 
@@ -78,16 +120,16 @@ async def create_crawl(
             enable_human_behaviors,
         ),
     }
-    return await _client(config).create_crawl(payload)
+    return await _client(ctx).create_crawl(payload)
 
 
 @tool
 async def list_crawls(
+    ctx: Ctx,
     status: str | None = None,
     q: str | None = None,
     limit: int | None = None,
     offset: int | None = None,
-    config: RunnableConfig = None,
 ) -> dict:
     """List crawl jobs. status filters by job status, q is a free-text search
     over jobs, limit (max 100, default 20) and offset paginate."""
@@ -101,71 +143,71 @@ async def list_crawls(
         }.items()
         if v is not None
     }
-    return await _client(config).list_crawls(**params)
+    return await _client(ctx).list_crawls(**params)
 
 
 @tool
-async def get_crawl(job_id: str, config: RunnableConfig = None) -> dict:
+async def get_crawl(ctx: Ctx, job_id: str) -> dict:
     """Get the current status and details of a single crawl job."""
-    return await _client(config).get_crawl(job_id)
+    return await _client(ctx).get_crawl(job_id)
 
 
 @tool
-async def cancel_crawl(job_id: str, config: RunnableConfig = None) -> dict:
+async def cancel_crawl(ctx: Ctx, job_id: str) -> dict:
     """Cancel a running crawl job."""
-    return await _client(config).cancel_crawl(job_id)
+    return await _client(ctx).cancel_crawl(job_id)
 
 
 @tool
-async def retry_crawl(job_id: str, config: RunnableConfig = None) -> dict:
+async def retry_crawl(ctx: Ctx, job_id: str) -> dict:
     """Retry a failed or cancelled crawl job."""
-    return await _client(config).retry_crawl(job_id)
+    return await _client(ctx).retry_crawl(job_id)
 
 
 @tool
-async def delete_crawl(job_id: str, config: RunnableConfig = None) -> dict:
+async def delete_crawl(ctx: Ctx, job_id: str) -> dict:
     """Delete a crawl job and its associated data."""
-    return await _client(config).delete_crawl(job_id)
+    return await _client(ctx).delete_crawl(job_id)
 
 
 @tool
 async def get_crawl_logs(
+    ctx: Ctx,
     job_id: str,
     limit: int | None = None,
     offset: int | None = None,
-    config: RunnableConfig = None,
 ) -> dict:
     """Get the execution logs for a crawl job. limit (max 200, default 50) and
     offset paginate."""
     params = {
         k: v for k, v in {"limit": limit, "offset": offset}.items() if v is not None
     }
-    return await _client(config).get_crawl_logs(job_id, **params)
+    return await _client(ctx).get_crawl_logs(job_id, **params)
 
 
 @tool
 async def list_discovered_urls(
+    ctx: Ctx,
     job_id: str,
     limit: int | None = None,
     offset: int | None = None,
-    config: RunnableConfig = None,
 ) -> dict:
     """List URLs discovered so far by a crawl job, before they're scraped.
     limit (max 200, default 50) and offset paginate."""
     params = {
         k: v for k, v in {"limit": limit, "offset": offset}.items() if v is not None
     }
-    return await _client(config).list_discovered_urls(job_id, **params)
+    return await _client(ctx).list_discovered_urls(job_id, **params)
 
 
 @tool
 async def scrape_discovered_urls(
+    ctx: Ctx,
     job_id: str,
     max_pages: int | None = None,
     concurrency: int | None = None,
     scraping_strategy: str | None = None,
     enable_human_behaviors: bool | None = None,
-    config: RunnableConfig = None,
 ) -> dict:
     """Scrape all currently discovered URLs for a crawl job (there's no way to
     pick a subset — it always runs against everything discovered so far).
@@ -180,23 +222,23 @@ async def scrape_discovered_urls(
             enable_human_behaviors,
         )
     }
-    return await _client(config).scrape_discovered_urls(job_id, payload)
+    return await _client(ctx).scrape_discovered_urls(job_id, payload)
 
 
 @tool
-async def get_dashboard_overview(config: RunnableConfig = None) -> dict:
+async def get_dashboard_overview(ctx: Ctx) -> dict:
     """Get a summary overview of crawl activity (counts, recent jobs, etc)."""
-    return await _client(config).get_dashboard_overview()
+    return await _client(ctx).get_dashboard_overview()
 
 
 @tool
 async def list_data(
+    ctx: Ctx,
     job_id: str | None = None,
     format: str | None = None,
     q: str | None = None,
     limit: int | None = None,
     offset: int | None = None,
-    config: RunnableConfig = None,
 ) -> dict:
     """List scraped data items. job_id filters to one crawl, q is a free-text
     search, format filters by content format, limit (max 200, default 50) and
@@ -212,23 +254,23 @@ async def list_data(
         }.items()
         if v is not None
     }
-    return await _client(config).list_data(**params)
+    return await _client(ctx).list_data(**params)
 
 
 @tool
-async def get_data_item(result_id: str, config: RunnableConfig = None) -> dict:
+async def get_data_item(ctx: Ctx, result_id: str) -> dict:
     """Get a single scraped data item by its result id."""
-    return await _client(config).get_data_item(result_id)
+    return await _client(ctx).get_data_item(result_id)
 
 
 @tool
 async def export_data(
+    ctx: Ctx,
     job_id: str | None = None,
     ids: list[str] | None = None,
     q: str | None = None,
     format: str | None = None,
     archive_format: str = "zip",
-    config: RunnableConfig = None,
 ) -> dict:
     """Kick off a bulk export of scraped data. job_id/ids/q select which items
     to export — omit all three to export everything. ids is a specific list
@@ -245,25 +287,23 @@ async def export_data(
         payload["q"] = q
     if format is not None:
         payload["format"] = format
-    return await _client(config).export_data(payload)
+    return await _client(ctx).export_data(payload)
 
 
 @tool
-async def list_crawl_templates(config: RunnableConfig = None) -> dict:
+async def list_crawl_templates(ctx: Ctx) -> dict:
     """List available crawl configuration templates."""
-    return await _client(config).list_crawl_templates()
+    return await _client(ctx).list_crawl_templates()
 
 
 @tool
-async def get_crawl_template(template_id: str, config: RunnableConfig = None) -> dict:
+async def get_crawl_template(ctx: Ctx, template_id: str) -> dict:
     """Get the settings of a specific crawl template."""
-    return await _client(config).get_crawl_template(template_id)
+    return await _client(ctx).get_crawl_template(template_id)
 
 
 @tool
-async def web_search(
-    query: str, max_results: int = 10, config: RunnableConfig = None
-) -> dict:
+async def web_search(ctx: Ctx, query: str, max_results: int = 10) -> dict:
     """Search the public web for pages matching a query — use this to find
     candidate URLs before crawling, e.g. turn "covid 19 bangla data" into a
     handful of real news/data site URLs, then pass the ones worth crawling to
@@ -271,7 +311,7 @@ async def web_search(
     content. Returns {"results": [{"title", "url", "snippet"}, ...]}, most
     relevant first. max_results caps how many come back (default 10, max 20).
     """
-    api_key = config["configurable"].get("search_api_key")
+    api_key = ctx.deps.search_api_key
     if not api_key:
         raise RuntimeError(
             "Web search isn't configured — save a search API key via "

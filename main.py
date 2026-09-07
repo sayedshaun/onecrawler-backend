@@ -3,10 +3,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy import select
 
-from src.agent.executor import set_checkpointer
 from src.api.security.router import router as security_router
 from src.api.users.router import router as users_router
 from src.api.v1.router import api_router
@@ -38,12 +36,7 @@ async def lifespan(app: FastAPI):
             )
             await db.commit()
     await get_arq_pool()
-    async with AsyncPostgresSaver.from_conn_string(
-        settings.CHECKPOINTER_DSN
-    ) as checkpointer:
-        await checkpointer.setup()
-        set_checkpointer(checkpointer)
-        yield
+    yield
     await close_arq_pool()
 
 

@@ -10,8 +10,8 @@ COPY . .
 
 
 # The API never imports onecrawler or launches a browser (that's the
-# worker's job) but does drive the agent (LangGraph + deepagents) in-process,
-# so its own dependencies cover that.
+# worker's job) but does drive the agent (deepharness) in-process, so its own
+# dependencies cover that.
 FROM base AS api
 
 RUN pip install --no-cache-dir .

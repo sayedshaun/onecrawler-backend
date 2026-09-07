@@ -1,50 +1,50 @@
+"""Agent construction and caching."""
+
 from collections import OrderedDict
-from typing import Any
 
-import mlflow
-from deepagents import create_deep_agent
+from deepharness import Agent, Budget
 
-from src.core.config import settings
-
+from . import tracing
 from .llm import build_chat_model
 from .prompt import SYSTEM_PROMPT
-from .tools import TOOLS
-
-mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
-mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
-mlflow.langchain.autolog()
+from .tools import TOOLS, EventToolbox
 
 _MAX_CACHED_AGENTS = 128
+_MAX_STEPS = 25
 
-_checkpointer = None
-_agent_cache: OrderedDict[tuple[str, str, str], Any] = OrderedDict()
-
-
-def set_checkpointer(checkpointer) -> None:
-    """Called once from the app's lifespan once a checkpointer connection is open."""
-    global _checkpointer
-    _checkpointer = checkpointer
-    _agent_cache.clear()
+_agent_cache: OrderedDict[tuple[str, str, str | None, str | None], Agent] = (
+    OrderedDict()
+)
 
 
-def get_agent(provider: str, model: str, api_key: str) -> Any:
-    """Return a deep agent for the given provider/model/api_key, building and
-    caching it on first use. provider/model/api_key must already be resolved
-    (see chat/router.py::_resolve_llm_config) — this service has no shared
-    fallback brain; every call is backed by a user's own saved LLM settings.
-    Cache is bounded (LRU) since api_key varies per user in a multi-tenant
-    setup and would otherwise grow unbounded."""
-    key = (provider, model, api_key)
+def get_agent(
+    provider: str, model: str, api_key: str | None, base_url: str | None = None
+) -> Agent:
+    """Return an agent for the given provider/model/api_key/base_url, building and
+    caching it on first use. They must already be resolved (see
+    agent/router.py::_resolve_agent_settings) — this service has no shared fallback
+    brain; every call is backed by a user's own saved LLM settings. Cache is bounded
+    (LRU) since api_key varies per user in a multi-tenant setup and would otherwise
+    grow unbounded.
+
+    The agent holds no per-request state: the transcript is passed in per run and the
+    auth token rides in deps, so one instance is safe to share across users.
+    """
+    key = (provider, model, api_key, base_url)
 
     if key in _agent_cache:
         _agent_cache.move_to_end(key)
         return _agent_cache[key]
 
-    agent = create_deep_agent(
-        model=build_chat_model(*key),
-        tools=TOOLS,
-        system_prompt=SYSTEM_PROMPT,
-        checkpointer=_checkpointer,
+    chat_model = build_chat_model(*key)
+    agent = Agent(
+        tracing.TracedLLM(chat_model, f"{provider}/{model}")
+        if tracing.ENABLED
+        else chat_model,
+        tools=tracing.TracedToolbox(TOOLS) if tracing.ENABLED else EventToolbox(TOOLS),
+        system=SYSTEM_PROMPT,
+        name="onecrawler",
+        budget=Budget(steps=_MAX_STEPS),
     )
     _agent_cache[key] = agent
     if len(_agent_cache) > _MAX_CACHED_AGENTS:

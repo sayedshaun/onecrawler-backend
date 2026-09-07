@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_EMAIL: str = "sayedshaun4@gmail.com"
     DEFAULT_ADMIN_PASSWORD: str = "shaun@crawler"
 
+    # Empty disables MLflow tracing entirely (see src/agent/tracing.py).
     MLFLOW_TRACKING_URI: str = "http://mlflow:5000"
     MLFLOW_EXPERIMENT_NAME: str = "onecrawler-agents"
 
@@ -35,12 +36,6 @@ class Settings(BaseSettings):
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
-
-    @property
-    def CHECKPOINTER_DSN(self) -> str:
-        """Langgraph-checkpoint-postgres uses psycopg directly, which doesn't understand
-        SQLAlchemy's "+asyncpg" driver suffix — strip it."""
-        return self.POSTGRES_URL.replace("postgresql+asyncpg://", "postgresql://")
 
 
 settings = Settings()

@@ -195,7 +195,8 @@ class AgentSettings(Base):
     """A user's own agent config.
 
     llm_* is required before /chat works; search_* is independent and optional — only
-    needed for the web_search tool.
+    needed for the web_search tool. llm_base_url is set only for the
+    openai_compatible provider (a self-hosted llama.cpp/vLLM-style server).
     """
 
     __tablename__ = "agent_settings"
@@ -206,6 +207,7 @@ class AgentSettings(Base):
     llm_provider: Mapped[str | None] = mapped_column(String, nullable=True)
     llm_model: Mapped[str | None] = mapped_column(String, nullable=True)
     llm_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    llm_base_url: Mapped[str | None] = mapped_column(String, nullable=True)
     search_provider: Mapped[str | None] = mapped_column(String, nullable=True)
     search_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
